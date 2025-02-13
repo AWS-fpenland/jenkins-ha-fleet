@@ -524,23 +524,30 @@ Resources:
           HttpTokens: required
           HttpEndpoint: enabled
         UserData:
-          Fn::Base64:
-            Fn::Join:
-              - ""
+          'Fn::Base64':
+            'Fn::Join':
+              - ''
               - - |
                   #!/bin/bash -xe
                   
                   # Update system and install required packages
                   yum update -y
                   yum install -y jq amazon-efs-utils java-11-amazon-corretto-headless wget curl
-
+                  
                   # Mount EFS
                   JENKINS_HOME="/var/lib/jenkins"
                   mkdir -p $JENKINS_HOME
-                - !Sub |
-                  mount -t efs ${EFSFileSystem}:/ $JENKINS_HOME
-                  echo "${EFSFileSystem}:/ $JENKINS_HOME efs _netdev,tls,noatime 0 0" >> /etc/fstab
+                  
                 - |
+                  mount -t efs 
+                - !Ref EFSFileSystem
+                - |
+                  :/ $JENKINS_HOME
+                  echo "
+                - !Ref EFSFileSystem
+                - |
+                  :/ $JENKINS_HOME efs _netdev,tls,noatime 0 0" >> /etc/fstab
+                  
                   # System optimizations
                   cat << 'EOF' > /etc/security/limits.d/jenkins.conf
                   jenkins soft nofile 4096
@@ -548,24 +555,25 @@ Resources:
                   jenkins soft nproc 30654
                   jenkins hard nproc 30654
                   EOF
-
+                  
                   # Configure Java options first
                   mkdir -p /etc/sysconfig
                   cat << 'EOF' > /etc/sysconfig/jenkins
                   JENKINS_JAVA_OPTIONS="-Djava.awt.headless=true -Djenkins.install.runSetupWizard=false -Dhudson.model.LoadStatistics.clock=1000"
                   JENKINS_PORT="8080"
                   EOF
-
+                  
                   # Install Jenkins
-                - !Sub |
                   wget -O /etc/yum.repos.d/jenkins.repo https://pkg.jenkins.io/redhat-stable/jenkins.repo
                   rpm --import https://pkg.jenkins.io/redhat-stable/jenkins.io-2023.key
-                  yum install -y jenkins-${JenkinsVersion}
-
+                  yum install -y jenkins-
+                - !Ref JenkinsVersion
+                - |
+                  
                   # Create plugin directory and download required plugins
                   mkdir -p $JENKINS_HOME/plugins
                   cd $JENKINS_HOME/plugins
-
+                  
                   # Function to download plugins with dependencies
                   download_plugin() {
                     local plugin=$1
@@ -574,34 +582,36 @@ Resources:
                       wget -q https://updates.jenkins.io/latest/${plugin}.jpi
                     fi
                   }
-
+                  
                   # Download required plugins
                   for plugin in ec2-fleet configuration-as-code credentials workflow-aggregator git; do
                     download_plugin $plugin
                   done
-
+                  
                   # Create init groovy script to disable setup wizard
                   mkdir -p $JENKINS_HOME/init.groovy.d
                   cat << 'EOF' > $JENKINS_HOME/init.groovy.d/disable-setup-wizard.groovy
                   import jenkins.model.*
                   import hudson.util.*;
                   import jenkins.install.*;
-
+                  
                   def instance = Jenkins.getInstance()
                   instance.setInstallState(InstallState.INITIAL_SETUP_COMPLETED)
                   instance.save()
                   EOF
-
-                  # Fetch admin credentials from Secrets Manager
-                - !Sub |
-                  ADMIN_CREDS=$(aws secretsmanager get-secret-value \
-                    --secret-id ${JenkinsAdminSecret} \
-                    --region ${AWS::Region} \
-                    --query SecretString --output text)
+                  
+                  # Fetch admin credentials
+                  ADMIN_CREDS=$(aws secretsmanager get-secret-value --secret-id 
+                - !Ref JenkinsAdminSecret
+                - |
+                  --region 
+                - !Ref 'AWS::Region'
+                - |
+                  --query SecretString --output text)
                   ADMIN_USER=$(echo $ADMIN_CREDS | jq -r '.username')
                   ADMIN_PASSWORD=$(echo $ADMIN_CREDS | jq -r '.password')
-
-                  # Configure Jenkins with initial setup
+                  
+                  # Configure Jenkins
                   cat << EOF > $JENKINS_HOME/jenkins.yaml
                   jenkins:
                     securityRealm:
@@ -649,31 +659,33 @@ Resources:
                         - name: "Default"
                           home: "git"
                   EOF
-
+                  
                   # Set correct permissions
                   chown -R jenkins:jenkins $JENKINS_HOME
                   chmod 700 $JENKINS_HOME
                   chmod 600 $JENKINS_HOME/jenkins.yaml
-
+                  
                   # Start Jenkins
                   systemctl enable jenkins
                   systemctl start jenkins
-
+                  
                   # Wait for Jenkins to be available
                   timeout 300 bash -c 'while [[ "$(curl -s -o /dev/null -w ''%{http_code}'' localhost:8080)" != "200" ]]; do sleep 5; done' || false
-
-                - !Sub |
+                  
                   # Signal completion
                   /opt/aws/bin/cfn-signal -e $? \
-                    --stack ${AWS::StackName} \
-                    --resource JenkinsASG \
-                    --region ${AWS::Region}
+                    --stack 
+                - !Ref 'AWS::StackName'
+                - |
+                  --resource JenkinsASG \
+                  --region 
+                - !Ref 'AWS::Region'
         TagSpecifications:
           - ResourceType: instance
             Tags:
               - Key: Name
                 Value: !Sub ${EnvironmentName}-jenkins-controller
-
+  
   JenkinsASG:
     Type: AWS::AutoScaling::AutoScalingGroup
     Properties:
