@@ -144,6 +144,121 @@ Resources:
       SubnetId: !Ref PublicSubnet3
       RouteTableId: !Ref PublicRouteTable
 
+  # Add these resources after the existing network configuration:
+
+  # Elastic IPs for NAT Gateways
+  NatGateway1EIP:
+    Type: AWS::EC2::EIP
+    DependsOn: AttachGateway
+    Properties:
+      Domain: vpc
+
+  NatGateway2EIP:
+    Type: AWS::EC2::EIP
+    DependsOn: AttachGateway
+    Properties:
+      Domain: vpc
+
+  NatGateway3EIP:
+    Type: AWS::EC2::EIP
+    DependsOn: AttachGateway
+    Properties:
+      Domain: vpc
+
+  # NAT Gateways
+  NatGateway1:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatGateway1EIP.AllocationId
+      SubnetId: !Ref PublicSubnet1
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-nat-1
+
+  NatGateway2:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatGateway2EIP.AllocationId
+      SubnetId: !Ref PublicSubnet2
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-nat-2
+
+  NatGateway3:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatGateway3EIP.AllocationId
+      SubnetId: !Ref PublicSubnet3
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-nat-3
+
+  # Private Route Tables
+  PrivateRouteTable1:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-private-rt-1
+
+  PrivateRouteTable2:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-private-rt-2
+
+  PrivateRouteTable3:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-private-rt-3
+
+  # Routes for private subnets
+  PrivateRoute1:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable1
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway1
+
+  PrivateRoute2:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable2
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway2
+
+  PrivateRoute3:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable3
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway3
+
+  # Route table associations for private subnets
+  PrivateSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet1
+      RouteTableId: !Ref PrivateRouteTable1
+
+  PrivateSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet2
+      RouteTableId: !Ref PrivateRouteTable2
+
+  PrivateSubnet3RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet3
+      RouteTableId: !Ref PrivateRouteTable3
+
   ####################
   # Security Groups  #
   ####################
@@ -172,6 +287,16 @@ Resources:
           FromPort: 8080
           ToPort: 8080
           SourceSecurityGroupId: !Ref ALBSecurityGroup
+        # Allow inbound SSH for troubleshooting
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+        # JNLP port for Jenkins agents
+        - IpProtocol: tcp
+          FromPort: 50000
+          ToPort: 50000
+          CidrIp: 10.0.0.0/16
 
   JenkinsWorkerSecurityGroup:
     Type: AWS::EC2::SecurityGroup
@@ -179,9 +304,15 @@ Resources:
       GroupDescription: Security group for Jenkins worker nodes
       VpcId: !Ref VPC
       SecurityGroupIngress:
+        # Allow inbound SSH from controller
         - IpProtocol: tcp
           FromPort: 22
           ToPort: 22
+          SourceSecurityGroupId: !Ref JenkinsControllerSecurityGroup
+        # Allow inbound JNLP from controller
+        - IpProtocol: tcp
+          FromPort: 50000
+          ToPort: 50000
           SourceSecurityGroupId: !Ref JenkinsControllerSecurityGroup
 
   EFSSecurityGroup:
@@ -193,7 +324,7 @@ Resources:
         - IpProtocol: tcp
           FromPort: 2049
           ToPort: 2049
-          SourceSecurityGroupId: !Ref JenkinsControllerSecurityGroup
+          CidrIp: 10.0.0.0.0/16
 
   ################
   # IAM Roles    #
@@ -234,6 +365,10 @@ Resources:
                   - elasticfilesystem:ClientWrite
                   - elasticfilesystem:ClientRootAccess
                 Resource: '*'
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource: !Ref JenkinsAdminSecret
 
   JenkinsControllerInstanceProfile:
     Type: AWS::IAM::InstanceProfile
@@ -356,6 +491,17 @@ Resources:
   #########################
   # Jenkins Controllers   #
   #########################
+  JenkinsAdminSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub ${EnvironmentName}-jenkins-admin-credentials
+      Description: Jenkins admin user credentials
+      GenerateSecretString:
+        SecretStringTemplate: '{"username": "admin"}'
+        GenerateStringKey: "password"
+        PasswordLength: 16
+        ExcludeCharacters: '"@/\\'
+
   JenkinsLaunchTemplate:
     Type: AWS::EC2::LaunchTemplate
     Properties:
@@ -390,6 +536,13 @@ Resources:
                   # Update system
                   yum update -y
                   yum install -y amazon-efs-utils java-11-amazon-corretto-headless
+                  yum install -y jq
+                  ADMIN_CREDS=$(aws secretsmanager get-secret-value \
+                    --secret-id ${JenkinsAdminSecret} \
+                    --region ${AWS::Region} \
+                    --query SecretString --output text)
+                  ADMIN_USER=$(echo $ADMIN_CREDS | jq -r '.username')
+                  ADMIN_PASSWORD=$(echo $ADMIN_CREDS | jq -r '.password')
                   
                   # System optimizations
                   cat << EOF > /etc/security/limits.d/jenkins.conf
@@ -422,6 +575,16 @@ Resources:
                   # Configure Jenkins
                   cat << EOF > $JENKINS_HOME/jenkins.yaml
                   jenkins:
+                    securityRealm:
+                      local:
+                        allowsSignup: false
+                        users:
+                          - id: ${ADMIN_USER}
+                            password: ${ADMIN_PASSWORD}
+                    authorizationStrategy:
+                      globalMatrix:
+                        permissions:
+                          - "Overall/Administer:${ADMIN_USER}"
                     systemMessage: "Jenkins HA Setup"
                     numExecutors: 0
                     mode: EXCLUSIVE
@@ -446,7 +609,6 @@ Resources:
                           minimumNumberOfSpareInstances: 1
                           scaleExecutorsByWeight: true
                   security:
-                    realm: jenkins
                     securityManager:
                       enabled: true
                     csrf:
@@ -604,6 +766,7 @@ Resources:
         MaintenanceStrategies:
           CapacityRebalance:
             ReplacementStrategy: launch-before-terminate
+            TerminationDelay: 120  # Adding 120 second delay before termination
       TargetCapacitySpecification:
         DefaultTargetCapacityType: spot
         OnDemandTargetCapacity: 0
