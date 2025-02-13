@@ -2,6 +2,8 @@ template-file-path: ./master-stack.yaml
 parameters:
     EnvironmentName: jenkins-poc
     KeyName: jenkins-demo-us-east-1
+    ArtifactBucket: '{{resolve:ssm:/cfn/artifact-bucket}}'
+    ArtifactPrefix: '{{resolve:ssm:/cfn/artifact-prefix}}'
 tags:
     Project: JenkinsHA
     Environment: POC
