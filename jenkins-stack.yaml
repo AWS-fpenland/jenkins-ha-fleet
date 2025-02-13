@@ -526,54 +526,21 @@ Resources:
         UserData:
           Fn::Base64:
             Fn::Join:
-              - ''
+              - ""
               - - |
                   #!/bin/bash -xe
                   
-                  # Update system and install required packages
+                  # Update system
                   yum update -y
                   yum install -y jq amazon-efs-utils java-11-amazon-corretto-headless wget curl
 
-                  # Setup Jenkins home directory and EFS mount
+                  # Mount EFS
                   JENKINS_HOME="/var/lib/jenkins"
                   mkdir -p $JENKINS_HOME
-
-                  # Mount EFS with retry logic
-                  mount_attempts=5
-                  mount_retry_delay=30
-
-                  for i in $(seq 1 $mount_attempts); do
-                    echo "Attempting to mount EFS (attempt $i of $mount_attempts)..."
-                    if mount -t efs 
-                - !Ref EFSFileSystem
+                - !Sub |
+                  mount -t efs ${EFSFileSystem}:/ $JENKINS_HOME
+                  echo "${EFSFileSystem}:/ $JENKINS_HOME efs _netdev,tls,noatime 0 0" >> /etc/fstab
                 - |
-                  :/ $JENKINS_HOME; then
-                    echo "EFS mount successful"
-                    break
-                  fi
-                    
-                    if [ $i -eq $mount_attempts ]; then
-                      echo "Failed to mount EFS after $mount_attempts attempts. Exiting."
-                - |
-                      /opt/aws/bin/cfn-signal -e 1 --stack 
-                - !Ref 'AWS::StackName'
-                - |
-                  --resource JenkinsASG --region 
-                - !Ref 'AWS::Region'
-                - |
-                      exit 1
-                    fi
-                    
-                    echo "Mount attempt $i failed. Waiting $mount_retry_delay seconds before retry..."
-                    sleep $mount_retry_delay
-                  done
-
-                  # Add EFS mount to fstab
-                  echo "
-                - !Ref EFSFileSystem
-                - |
-                  :/ $JENKINS_HOME efs _netdev,tls,noatime 0 0" >> /etc/fstab
-
                   # System optimizations
                   cat << 'EOF' > /etc/security/limits.d/jenkins.conf
                   jenkins soft nofile 4096
@@ -582,21 +549,13 @@ Resources:
                   jenkins hard nproc 30654
                   EOF
 
-                  # Configure Java options first
-                  mkdir -p /etc/sysconfig
-                  cat << 'EOF' > /etc/sysconfig/jenkins
-                  JENKINS_JAVA_OPTIONS="-Djava.awt.headless=true -Djenkins.install.runSetupWizard=false -Dhudson.model.LoadStatistics.clock=1000"
-                  JENKINS_PORT="8080"
-                  EOF
-
                   # Install Jenkins
+                - !Sub |
                   wget -O /etc/yum.repos.d/jenkins.repo https://pkg.jenkins.io/redhat-stable/jenkins.repo
                   rpm --import https://pkg.jenkins.io/redhat-stable/jenkins.io-2023.key
-                  yum install -y jenkins-
-                - !Ref JenkinsVersion
+                  yum install -y jenkins-${JenkinsVersion}
                 - |
-
-                  # Create plugin directory
+                  # Create plugin directory and download required plugins
                   mkdir -p $JENKINS_HOME/plugins
                   cd $JENKINS_HOME/plugins
 
@@ -616,6 +575,12 @@ Resources:
                     done
                   done
 
+                  # Configure Java options
+                  cat << 'EOF' > /etc/sysconfig/jenkins
+                  JENKINS_JAVA_OPTIONS="-Xmx2048m -Djava.awt.headless=true -Djenkins.install.runSetupWizard=false"
+                  JENKINS_PORT="8080"
+                  EOF
+
                   # Create init groovy script
                   mkdir -p $JENKINS_HOME/init.groovy.d
                   cat << 'EOF' > $JENKINS_HOME/init.groovy.d/disable-setup-wizard.groovy
@@ -628,30 +593,28 @@ Resources:
                   instance.save()
                   EOF
 
-                  # Fetch admin credentials
-                  ADMIN_CREDS=$(aws secretsmanager get-secret-value --secret-id 
-                - !Ref JenkinsAdminSecret
-                - |
-                  --region 
-                - !Ref 'AWS::Region'
-                - |
-                  --query SecretString --output text)
+                  # Fetch admin credentials from Secrets Manager
+                - !Sub |
+                  ADMIN_CREDS=$(aws secretsmanager get-secret-value \
+                    --secret-id ${JenkinsAdminSecret} \
+                    --region ${AWS::Region} \
+                    --query SecretString --output text)
                   ADMIN_USER=$(echo $ADMIN_CREDS | jq -r '.username')
                   ADMIN_PASSWORD=$(echo $ADMIN_CREDS | jq -r '.password')
-
+                - |
                   # Configure Jenkins
-                  cat << EOF > $JENKINS_HOME/jenkins.yaml
+                  cat << \EOF > $JENKINS_HOME/jenkins.yaml
                   jenkins:
                     securityRealm:
                       local:
                         allowsSignup: false
                         users:
-                          - id: "$ADMIN_USER"
-                            password: "$ADMIN_PASSWORD"
+                          - id: "${ADMIN_USER}"
+                            password: "${ADMIN_PASSWORD}"
                     authorizationStrategy:
                       globalMatrix:
                         permissions:
-                          - "Overall/Administer:$ADMIN_USER"
+                          - "Overall/Administer:${ADMIN_USER}"
                     systemMessage: "Jenkins HA Setup"
                     numExecutors: 0
                     mode: EXCLUSIVE
@@ -697,35 +660,14 @@ Resources:
                   systemctl enable jenkins
                   systemctl start jenkins
 
-                  # Wait for Jenkins with timeout
-                  timeout=300
-                  interval=10
-                  elapsed=0
-
-                  while [ $elapsed -lt $timeout ]; do
-                    if curl -s -f http://localhost:8080 > /dev/null; then
-                      echo "Jenkins is running"
-                      /opt/aws/bin/cfn-signal -e 0 --stack 
-                - !Ref 'AWS::StackName'
-                - |
-                  --resource JenkinsASG --region 
-                - !Ref 'AWS::Region'
-                - |
-                      exit 0
-                    fi
-                    sleep $interval
-                    elapsed=$((elapsed + interval))
-                    echo "Waiting for Jenkins... ($elapsed/$timeout seconds)"
-                  done
-
-                  echo "Timeout waiting for Jenkins"
-                  /opt/aws/bin/cfn-signal -e 1 --stack 
-                - !Ref 'AWS::StackName'
-                - |
-                  --resource JenkinsASG --region 
-                - !Ref 'AWS::Region'
-                - |
-                  exit 1
+                  # Wait for Jenkins to be available
+                  timeout 300 bash -c 'while [[ "$(curl -s -o /dev/null -w ''%{http_code}'' localhost:8080)" != "200" ]]; do sleep 5; done' || false
+                - !Sub |
+                  # Signal completion
+                  /opt/aws/bin/cfn-signal -e $? \
+                    --stack ${AWS::StackName} \
+                    --resource JenkinsASG \
+                    --region ${AWS::Region}
         TagSpecifications:
           - ResourceType: instance
             Tags:
