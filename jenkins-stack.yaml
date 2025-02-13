@@ -530,9 +530,9 @@ Resources:
               - - |
                   #!/bin/bash -xe
                   
-                  # Update system
+                  # Update system and install required packages
                   yum update -y
-                  yum install -y jq amazon-efs-utils java-11-amazon-corretto-headless
+                  yum install -y jq amazon-efs-utils java-11-amazon-corretto-headless wget curl
 
                   # Mount EFS
                   JENKINS_HOME="/var/lib/jenkins"
@@ -549,15 +549,47 @@ Resources:
                   jenkins hard nproc 30654
                   EOF
 
+                  # Configure Java options first
+                  mkdir -p /etc/sysconfig
+                  cat << 'EOF' > /etc/sysconfig/jenkins
+                  JENKINS_JAVA_OPTIONS="-Djava.awt.headless=true -Djenkins.install.runSetupWizard=false -Dhudson.model.LoadStatistics.clock=1000"
+                  JENKINS_PORT="8080"
+                  EOF
+
                   # Install Jenkins
                 - !Sub |
                   wget -O /etc/yum.repos.d/jenkins.repo https://pkg.jenkins.io/redhat-stable/jenkins.repo
                   rpm --import https://pkg.jenkins.io/redhat-stable/jenkins.io-2023.key
                   yum install -y jenkins-${JenkinsVersion}
-                - |
-                  # Configure Java options
-                  cat << 'EOF' > /etc/sysconfig/jenkins
-                  JENKINS_JAVA_OPTIONS="-Xmx2048m -Djava.awt.headless=true -Djenkins.install.runSetupWizard=false"
+
+                  # Create plugin directory and download required plugins
+                  mkdir -p $JENKINS_HOME/plugins
+                  cd $JENKINS_HOME/plugins
+
+                  # Function to download plugins with dependencies
+                  download_plugin() {
+                    local plugin=$1
+                    if [ ! -f ${plugin}.hpi ] && [ ! -f ${plugin}.jpi ]; then
+                      wget -q https://updates.jenkins.io/latest/${plugin}.hpi || \
+                      wget -q https://updates.jenkins.io/latest/${plugin}.jpi
+                    fi
+                  }
+
+                  # Download required plugins
+                  for plugin in ec2-fleet configuration-as-code credentials workflow-aggregator git; do
+                    download_plugin $plugin
+                  done
+
+                  # Create init groovy script to disable setup wizard
+                  mkdir -p $JENKINS_HOME/init.groovy.d
+                  cat << 'EOF' > $JENKINS_HOME/init.groovy.d/disable-setup-wizard.groovy
+                  import jenkins.model.*
+                  import hudson.util.*;
+                  import jenkins.install.*;
+
+                  def instance = Jenkins.getInstance()
+                  instance.setInstallState(InstallState.INITIAL_SETUP_COMPLETED)
+                  instance.save()
                   EOF
 
                   # Fetch admin credentials from Secrets Manager
@@ -568,17 +600,16 @@ Resources:
                     --query SecretString --output text)
                   ADMIN_USER=$(echo $ADMIN_CREDS | jq -r '.username')
                   ADMIN_PASSWORD=$(echo $ADMIN_CREDS | jq -r '.password')
-                - |
-                  # Configure Jenkins
-                  mkdir -p $JENKINS_HOME/init.groovy.d
+
+                  # Configure Jenkins with initial setup
                   cat << EOF > $JENKINS_HOME/jenkins.yaml
                   jenkins:
                     securityRealm:
                       local:
                         allowsSignup: false
                         users:
-                          - id: $ADMIN_USER
-                            password: $ADMIN_PASSWORD
+                          - id: "$ADMIN_USER"
+                            password: "$ADMIN_PASSWORD"
                     authorizationStrategy:
                       globalMatrix:
                         permissions:
@@ -619,7 +650,7 @@ Resources:
                           home: "git"
                   EOF
 
-                  # Set permissions
+                  # Set correct permissions
                   chown -R jenkins:jenkins $JENKINS_HOME
                   chmod 700 $JENKINS_HOME
                   chmod 600 $JENKINS_HOME/jenkins.yaml
@@ -627,6 +658,10 @@ Resources:
                   # Start Jenkins
                   systemctl enable jenkins
                   systemctl start jenkins
+
+                  # Wait for Jenkins to be available
+                  timeout 300 bash -c 'while [[ "$(curl -s -o /dev/null -w ''%{http_code}'' localhost:8080)" != "200" ]]; do sleep 5; done' || false
+
                 - !Sub |
                   # Signal completion
                   /opt/aws/bin/cfn-signal -e $? \
