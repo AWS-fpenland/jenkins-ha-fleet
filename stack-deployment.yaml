@@ -1,13 +1,8 @@
-deploymentConfiguration:
-  template: master-stack.yaml
-  stackName: jenkins-ha-fleet
-  capabilities:
-    - CAPABILITY_NAMED_IAM
-    - CAPABILITY_AUTO_EXPAND
-  parameters:
+template-file-path: ./master-stack.yaml
+parameters:
     EnvironmentName: jenkins-poc
-    KeyName: jenkins-demo-us-east-1
-  tags:
+    KeyName: REPLACE_WITH_YOUR_KEY_PAIR
+tags:
     Project: JenkinsHA
     Environment: POC
     ManagedBy: CloudFormation
