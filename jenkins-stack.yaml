@@ -369,97 +369,105 @@ Resources:
           - !Ref JenkinsControllerSecurityGroup
         KeyName: !Ref KeyName
         UserData:
-          Fn::Base64: !Sub |
-            #!/bin/bash -xe
-            
-            # Error handling
-            handle_error() {
-              echo "Error occurred in script at line: $${1}"
-              exit 1
-            }
-            trap 'handle_error $${LINENO}' ERR
-  
-            # Setup logging
-            mkdir -p /var/log/jenkins-init
-            exec 1> >(tee /var/log/jenkins-init/user-data.log)
-            exec 2>&1
-  
-            # Update system
-            yum update -y
-            yum install -y amazon-efs-utils java-11-amazon-corretto-headless
-  
-            # System optimizations
-            cat << EOF > /etc/security/limits.d/jenkins.conf
-            jenkins soft nofile 4096
-            jenkins hard nofile 8192
-            jenkins soft nproc 30654
-            jenkins hard nproc 30654
-            EOF
-  
-            # Mount EFS
-            JENKINS_HOME="/var/lib/jenkins"
-            mkdir -p $${JENKINS_HOME}
-            mount -t efs ${EFSFileSystem}:/ $${JENKINS_HOME}
-            echo "${EFSFileSystem}:/ $${JENKINS_HOME} efs _netdev,tls,noatime 0 0" >> /etc/fstab
-  
-            # Install Jenkins
-            wget -O /etc/yum.repos.d/jenkins.repo https://pkg.jenkins.io/redhat-stable/jenkins.repo
-            rpm --import https://pkg.jenkins.io/redhat-stable/jenkins.io-2023.key
-            yum install -y jenkins-${JenkinsVersion}
-  
-            # Configure Java options
-            cat << EOF > /etc/sysconfig/jenkins
-            JENKINS_JAVA_OPTIONS="-Xmx2048m -Djava.awt.headless=true -Djenkins.install.runSetupWizard=false"
-            EOF
-  
-            # Configure Jenkins
-            cat << EOF > $${JENKINS_HOME}/jenkins.yaml
-            jenkins:
-              systemMessage: "Jenkins HA Setup"
-              numExecutors: 0
-              mode: EXCLUSIVE
-              scmCheckoutRetryCount: 2
-              quietPeriod: 5
-              remotingSecurity:
-                enabled: true
-              clouds:
-                - ec2Fleet:
-                    name: "EC2 Fleet"
-                    cloudName: "AWS"
-                    computerConnector:
-                      digitalOceanComputerConnector:
-                        privateKey: ""
-                    idleMinutes: 10
-                    minSize: 0
-                    maxSize: 10
-                    templateFile: "fleet-templates.json"
-                    fsRoot: "/home/jenkins"
-                    labels: "ec2-fleet"
-                    instanceCapStr: "10"
-                    minimumNumberOfSpareInstances: 1
-                    scaleExecutorsByWeight: true
-            security:
-              realm: jenkins
-              securityManager:
-                enabled: true
-              csrf:
-                defaultCrumbIssuer:
-                  enabled: true
-            tool:
-              git:
-                installations:
-                  - name: "Default"
-                    home: "git"
-            EOF
-  
-            # Set permissions
-            chmod 700 $${JENKINS_HOME}
-            chmod 600 $${JENKINS_HOME}/jenkins.yaml
-            chown -R jenkins:jenkins $${JENKINS_HOME}
-            
-            # Start Jenkins
-            systemctl enable jenkins
-            systemctl start jenkins
+          Fn::Base64:
+            Fn::Join:
+              - ""
+              - - |
+                  #!/bin/bash -xe
+                  
+                  # Error handling
+                  handle_error() {
+                    echo "Error occurred in script at line: $1"
+                    exit 1
+                  }
+                  trap 'handle_error $LINENO' ERR
+                - |
+                  
+                  # Setup logging
+                  mkdir -p /var/log/jenkins-init
+                  exec 1> >(tee /var/log/jenkins-init/user-data.log)
+                  exec 2>&1
+                  
+                  # Update system
+                  yum update -y
+                  yum install -y amazon-efs-utils java-11-amazon-corretto-headless
+                  
+                  # System optimizations
+                  cat << EOF > /etc/security/limits.d/jenkins.conf
+                  jenkins soft nofile 4096
+                  jenkins hard nofile 8192
+                  jenkins soft nproc 30654
+                  jenkins hard nproc 30654
+                  EOF
+                  
+                  # Mount EFS
+                  JENKINS_HOME="/var/lib/jenkins"
+                  mkdir -p $JENKINS_HOME
+                - !Sub |
+                  mount -t efs ${EFSFileSystem}:/ $JENKINS_HOME
+                  echo "${EFSFileSystem}:/ $JENKINS_HOME efs _netdev,tls,noatime 0 0" >> /etc/fstab
+                - |
+                  
+                  # Install Jenkins
+                - !Sub |
+                  wget -O /etc/yum.repos.d/jenkins.repo https://pkg.jenkins.io/redhat-stable/jenkins.repo
+                  rpm --import https://pkg.jenkins.io/redhat-stable/jenkins.io-2023.key
+                  yum install -y jenkins-${JenkinsVersion}
+                - |
+                  
+                  # Configure Java options
+                  cat << EOF > /etc/sysconfig/jenkins
+                  JENKINS_JAVA_OPTIONS="-Xmx2048m -Djava.awt.headless=true -Djenkins.install.runSetupWizard=false"
+                  EOF
+                  
+                  # Configure Jenkins
+                  cat << EOF > $JENKINS_HOME/jenkins.yaml
+                  jenkins:
+                    systemMessage: "Jenkins HA Setup"
+                    numExecutors: 0
+                    mode: EXCLUSIVE
+                    scmCheckoutRetryCount: 2
+                    quietPeriod: 5
+                    remotingSecurity:
+                      enabled: true
+                    clouds:
+                      - ec2Fleet:
+                          name: "EC2 Fleet"
+                          cloudName: "AWS"
+                          computerConnector:
+                            digitalOceanComputerConnector:
+                              privateKey: ""
+                          idleMinutes: 10
+                          minSize: 0
+                          maxSize: 10
+                          templateFile: "fleet-templates.json"
+                          fsRoot: "/home/jenkins"
+                          labels: "ec2-fleet"
+                          instanceCapStr: "10"
+                          minimumNumberOfSpareInstances: 1
+                          scaleExecutorsByWeight: true
+                  security:
+                    realm: jenkins
+                    securityManager:
+                      enabled: true
+                    csrf:
+                      defaultCrumbIssuer:
+                        enabled: true
+                  tool:
+                    git:
+                      installations:
+                        - name: "Default"
+                          home: "git"
+                  EOF
+                  
+                  # Set permissions
+                  chmod 700 $JENKINS_HOME
+                  chmod 600 $JENKINS_HOME/jenkins.yaml
+                  chown -R jenkins:jenkins $JENKINS_HOME
+                  
+                  # Start Jenkins
+                  systemctl enable jenkins
+                  systemctl start jenkins
   
   JenkinsASG:
     Type: AWS::AutoScaling::AutoScalingGroup
