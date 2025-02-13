@@ -279,7 +279,6 @@ Resources:
   EFSFileSystem:
     Type: AWS::EFS::FileSystem
     Properties:
-      Encrypted: true
       PerformanceMode: generalPurpose
       ThroughputMode: bursting
       FileSystemTags:
