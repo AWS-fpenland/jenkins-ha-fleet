@@ -1,0 +1,121 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Security and IAM configuration for Jenkins HA deployment'
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: jenkins-poc
+    Description: Environment name used for tagging
+
+Resources:
+  # Jenkins Controller Instance Profile
+  JenkinsControllerInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles:
+        - !Ref JenkinsControllerRole
+
+  # Jenkins Controller Role
+  JenkinsControllerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Policies:
+        - PolicyName: JenkinsControllerPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ec2:DescribeInstances
+                  - ec2:DescribeSpotInstanceRequests
+                  - ec2:RequestSpotInstances
+                  - ec2:TerminateInstances
+                  - ec2:CreateFleet
+                  - ec2:RunInstances
+                  - ec2:CreateTags
+                  - iam:PassRole
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - elasticfilesystem:ClientMount
+                  - elasticfilesystem:ClientWrite
+                  - elasticfilesystem:ClientRootAccess
+                Resource: '*'
+
+  # Jenkins Worker Role
+  JenkinsWorkerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Policies:
+        - PolicyName: JenkinsWorkerPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ec2:DescribeInstances
+                Resource: '*'
+
+  # Jenkins Worker Instance Profile
+  JenkinsWorkerInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles:
+        - !Ref JenkinsWorkerRole
+
+  # Worker Node Security Group
+  JenkinsWorkerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for Jenkins worker nodes
+      VpcId: 
+        Fn::ImportValue: !Sub ${EnvironmentName}-vpc-id
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          SourceSecurityGroupId:
+            Fn::ImportValue: !Sub ${EnvironmentName}-controller-sg
+
+Outputs:
+  JenkinsControllerInstanceProfile:
+    Description: Jenkins Controller Instance Profile ARN
+    Value: !GetAtt JenkinsControllerInstanceProfile.Arn
+    Export:
+      Name: !Sub ${EnvironmentName}-controller-profile
+
+  JenkinsWorkerInstanceProfile:
+    Description: Jenkins Worker Instance Profile ARN
+    Value: !GetAtt JenkinsWorkerInstanceProfile.Arn
+    Export:
+      Name: !Sub ${EnvironmentName}-worker-profile
+
+  JenkinsWorkerSecurityGroup:
+    Description: Jenkins Worker Security Group ID
+    Value: !Ref JenkinsWorkerSecurityGroup
+    Export:
+      Name: !Sub ${EnvironmentName}-worker-sg

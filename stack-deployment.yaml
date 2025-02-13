@@ -1,0 +1,20 @@
+template: master-stack.yaml
+stackName: jenkins-ha-fleet
+
+capabilities:
+  - CAPABILITY_NAMED_IAM
+  - CAPABILITY_AUTO_EXPAND
+
+parameters:
+  - key: EnvironmentName
+    value: jenkins-poc
+  - key: KeyName
+    value: REPLACE_WITH_YOUR_KEY_PAIR
+
+tags:
+  - key: Project
+    value: JenkinsHA
+  - key: Environment
+    value: POC
+  - key: ManagedBy
+    value: CloudFormation

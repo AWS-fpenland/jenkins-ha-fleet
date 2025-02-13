@@ -1,0 +1,146 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Jenkins HA Controller deployment'
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: jenkins-poc
+    Description: Environment name used for tagging
+
+  InstanceType:
+    Type: String
+    Default: t3a.medium
+    Description: Instance type for Jenkins controller
+
+  KeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: Name of an existing EC2 KeyPair for SSH access
+
+  JenkinsVersion:
+    Type: String
+    Default: "2.426.1"
+    Description: Jenkins version to install
+
+Resources:
+  JenkinsTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      HealthCheckEnabled: true
+      HealthCheckIntervalSeconds: 30
+      HealthCheckPath: /login
+      HealthCheckPort: 8080
+      HealthCheckProtocol: HTTP
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      Port: 8080
+      Protocol: HTTP
+      TargetType: instance
+      UnhealthyThresholdCount: 5
+      VpcId: 
+        Fn::ImportValue: !Sub ${EnvironmentName}-vpc-id
+
+  JenkinsListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref JenkinsTargetGroup
+      LoadBalancerArn: 
+        Fn::ImportValue: !Sub ${EnvironmentName}-alb-dns
+      Port: 80
+      Protocol: HTTP
+
+  JenkinsLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateData:
+        ImageId: !Ref LatestAmiId
+        InstanceType: !Ref InstanceType
+        IamInstanceProfile:
+          Arn: 
+            Fn::ImportValue: !Sub ${EnvironmentName}-controller-profile
+        SecurityGroupIds:
+          - Fn::ImportValue: !Sub ${EnvironmentName}-controller-sg
+        KeyName: !Ref KeyName
+        UserData:
+          Fn::Base64: !Sub |
+            #!/bin/bash -xe
+            
+            # Update system
+            yum update -y
+            yum install -y amazon-efs-utils java-11-amazon-corretto-headless
+
+            # Mount EFS
+            EFS_ID=${EFSFileSystemId}
+            JENKINS_HOME="/var/lib/jenkins"
+            mkdir -p ${JENKINS_HOME}
+            mount -t efs ${EFS_ID}:/ ${JENKINS_HOME}
+            echo "${EFS_ID}:/ ${JENKINS_HOME} efs _netdev,tls 0 0" >> /etc/fstab
+
+            # Install Jenkins
+            wget -O /etc/yum.repos.d/jenkins.repo https://pkg.jenkins.io/redhat-stable/jenkins.repo
+            rpm --import https://pkg.jenkins.io/redhat-stable/jenkins.io-2023.key
+            yum install -y jenkins-${JenkinsVersion}
+
+            # Configure Jenkins
+            cat << EOF > ${JENKINS_HOME}/jenkins.yaml
+            jenkins:
+              systemMessage: "Jenkins HA Setup"
+              numExecutors: 0
+              mode: EXCLUSIVE
+              scmCheckoutRetryCount: 2
+              clouds:
+                - ec2Fleet:
+                    name: "EC2 Fleet"
+                    cloudName: "AWS"
+                    computerConnector:
+                      digitalOceanComputerConnector:
+                        privateKey: ""
+                    idleMinutes: 10
+                    minSize: 0
+                    maxSize: 10
+                    templateFile: "fleet-templates.json"
+                    fsRoot: "/home/jenkins"
+                    labels: "ec2-fleet"
+            security:
+              realm: jenkins
+              securityManager:
+                enabled: true
+            EOF
+
+            # Set permissions
+            chown -R jenkins:jenkins ${JENKINS_HOME}
+            
+            # Start Jenkins
+            systemctl enable jenkins
+            systemctl start jenkins
+
+  JenkinsASG:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      AutoScalingGroupName: !Sub ${EnvironmentName}-jenkins-controllers
+      DesiredCapacity: 2
+      MinSize: 1
+      MaxSize: 3
+      TargetGroupARNs:
+        - !Ref JenkinsTargetGroup
+      VPCZoneIdentifier:
+        Fn::Split:
+          - ","
+          - Fn::ImportValue: !Sub ${EnvironmentName}-private-subnets
+      LaunchTemplate:
+        LaunchTemplateId: !Ref JenkinsLaunchTemplate
+        Version: !GetAtt JenkinsLaunchTemplate.LatestVersionNumber
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-jenkins-controller
+          PropagateAtLaunch: true
+
+  LatestAmiId:
+    Type: AWS::SSM::Parameter::Value
+    Default: /aws/service/ami-amazon-linux-2/amzn2-ami-hvm-x86_64-gp2
+
+Outputs:
+  JenkinsURL:
+    Description: URL for Jenkins
+    Value: !Sub http://${JenkinsALBDNS}

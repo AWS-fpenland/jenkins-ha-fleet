@@ -1,0 +1,51 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Master template for Jenkins HA deployment with EC2 Fleet'
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: jenkins-poc
+    Description: Environment name used for tagging
+
+  KeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: Name of an existing EC2 KeyPair for SSH access
+
+Resources:
+  NetworkStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: templates/network-stack.yaml
+      Parameters:
+        EnvironmentName: !Ref EnvironmentName
+
+  SecurityStack:
+    Type: AWS::CloudFormation::Stack
+    DependsOn: NetworkStack
+    Properties:
+      TemplateURL: templates/security-stack.yaml
+      Parameters:
+        EnvironmentName: !Ref EnvironmentName
+
+  JenkinsControllerStack:
+    Type: AWS::CloudFormation::Stack
+    DependsOn: SecurityStack
+    Properties:
+      TemplateURL: templates/jenkins-controller.yaml
+      Parameters:
+        EnvironmentName: !Ref EnvironmentName
+        KeyName: !Ref KeyName
+
+  JenkinsWorkersStack:
+    Type: AWS::CloudFormation::Stack
+    DependsOn: JenkinsControllerStack
+    Properties:
+      TemplateURL: templates/jenkins-workers.yaml
+      Parameters:
+        EnvironmentName: !Ref EnvironmentName
+        KeyName: !Ref KeyName
+
+Outputs:
+  JenkinsURL:
+    Description: Jenkins URL
+    Value: !GetAtt JenkinsControllerStack.Outputs.JenkinsURL

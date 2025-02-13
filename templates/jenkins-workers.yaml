@@ -1,0 +1,114 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Jenkins EC2 Fleet Worker Configuration'
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: jenkins-poc
+    Description: Environment name used for tagging
+
+  KeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: Name of an existing EC2 KeyPair for SSH access
+
+Resources:
+  EC2FleetConfiguration:
+    Type: AWS::EC2::EC2Fleet
+    Properties:
+      LaunchTemplateConfigs:
+        - LaunchTemplateSpecification:
+            LaunchTemplateId: !Ref WorkerLaunchTemplate
+            Version: !GetAtt WorkerLaunchTemplate.LatestVersionNumber
+          Overrides:
+            # m6a instances
+            - InstanceType: m6a.large
+              SubnetId: 
+                Fn::ImportValue: !Sub ${EnvironmentName}-private-subnets
+              Priority: 1
+            - InstanceType: m6a.xlarge
+              SubnetId: 
+                Fn::ImportValue: !Sub ${EnvironmentName}-private-subnets
+              Priority: 2
+            # c6a instances
+            - InstanceType: c6a.large
+              SubnetId: 
+                Fn::ImportValue: !Sub ${EnvironmentName}-private-subnets
+              Priority: 3
+            - InstanceType: c6a.xlarge
+              SubnetId: 
+                Fn::ImportValue: !Sub ${EnvironmentName}-private-subnets
+              Priority: 4
+            # r6a instances
+            - InstanceType: r6a.large
+              SubnetId: 
+                Fn::ImportValue: !Sub ${EnvironmentName}-private-subnets
+              Priority: 5
+            - InstanceType: r6a.xlarge
+              SubnetId: 
+                Fn::ImportValue: !Sub ${EnvironmentName}-private-subnets
+              Priority: 6
+      OnDemandOptions:
+        AllocationStrategy: lowest-price
+        CapacityReservationOptions:
+          UsageStrategy: use-capacity-reservations-first
+        MaxTotalPrice: 10.0
+        MinTargetCapacity: 0
+      SpotOptions:
+        AllocationStrategy: capacity-optimized
+        InstanceInterruptionBehavior: terminate
+        MaintenanceStrategies:
+          CapacityRebalance:
+            ReplacementStrategy: launch-before-terminate
+      TargetCapacitySpecification:
+        DefaultTargetCapacityType: spot
+        OnDemandTargetCapacity: 0
+        SpotTargetCapacity: 0
+        TotalTargetCapacity: 0
+      Type: maintain
+
+  WorkerLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateData:
+        ImageId: !Ref LatestAmiId
+        IamInstanceProfile:
+          Arn:
+            Fn::ImportValue: !Sub ${EnvironmentName}-worker-profile
+        SecurityGroupIds:
+          - Fn::ImportValue: !Sub ${EnvironmentName}-worker-sg
+        KeyName: !Ref KeyName
+        UserData:
+          Fn::Base64: !Sub |
+            #!/bin/bash -xe
+            
+            # Update system
+            yum update -y
+            yum install -y java-11-amazon-corretto-headless git docker
+            
+            # Start Docker
+            systemctl enable docker
+            systemctl start docker
+            
+            # Create Jenkins user
+            useradd -m -d /home/jenkins jenkins
+            
+            # Setup Docker permissions
+            usermod -aG docker jenkins
+            
+            # Install required tools
+            yum install -y python3-pip maven
+            
+            # Configure worker node
+            mkdir -p /home/jenkins/workspace
+            chown -R jenkins:jenkins /home/jenkins
+
+  LatestAmiId:
+    Type: AWS::SSM::Parameter::Value
+    Default: /aws/service/ami-amazon-linux-2/amzn2-ami-hvm-x86_64-gp2
+
+Outputs:
+  EC2FleetId:
+    Description: EC2 Fleet ID
+    Value: !Ref EC2FleetConfiguration
+    Export:
+      Name: !Sub ${EnvironmentName}-fleet-id
