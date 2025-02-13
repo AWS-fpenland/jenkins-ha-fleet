@@ -9,7 +9,7 @@ parameters:
   - key: EnvironmentName
     value: jenkins-poc
   - key: KeyName
-    value: REPLACE_WITH_YOUR_KEY_PAIR
+    value: jenkins-demo-us-east-1
 
 tags:
   - key: Project
