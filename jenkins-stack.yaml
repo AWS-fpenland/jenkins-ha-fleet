@@ -1,0 +1,577 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Jenkins HA deployment with EC2 Fleet (Flattened Stack)'
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: jenkins-poc
+    Description: Environment name used for tagging
+
+  KeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: Name of an existing EC2 KeyPair for SSH access
+
+  JenkinsVersion:
+    Type: String
+    Default: "2.426.1"
+    Description: Jenkins version to install
+
+Resources:
+  ###################
+  # VPC and Network #
+  ###################
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-vpc
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-igw
+
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.1.0/24
+      AvailabilityZone: !Select [0, !GetAZs '']
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-public-1
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.2.0/24
+      AvailabilityZone: !Select [1, !GetAZs '']
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-public-2
+
+  PublicSubnet3:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.3.0/24
+      AvailabilityZone: !Select [2, !GetAZs '']
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-public-3
+
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.4.0/24
+      AvailabilityZone: !Select [0, !GetAZs '']
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-private-1
+
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.5.0/24
+      AvailabilityZone: !Select [1, !GetAZs '']
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-private-2
+
+  PrivateSubnet3:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.6.0/24
+      AvailabilityZone: !Select [2, !GetAZs '']
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-private-3
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-public-rt
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: AttachGateway
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet2
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnet3RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet3
+      RouteTableId: !Ref PublicRouteTable
+
+  ####################
+  # Security Groups  #
+  ####################
+  ALBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for Jenkins ALB
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+
+  JenkinsControllerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for Jenkins controllers
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 8080
+          ToPort: 8080
+          SourceSecurityGroupId: !Ref ALBSecurityGroup
+
+  JenkinsWorkerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for Jenkins worker nodes
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          SourceSecurityGroupId: !Ref JenkinsControllerSecurityGroup
+
+  EFSSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for EFS mount targets
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 2049
+          ToPort: 2049
+          SourceSecurityGroupId: !Ref JenkinsControllerSecurityGroup
+
+  ################
+  # IAM Roles    #
+  ################
+  JenkinsControllerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Policies:
+        - PolicyName: JenkinsControllerPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ec2:DescribeInstances
+                  - ec2:DescribeSpotInstanceRequests
+                  - ec2:RequestSpotInstances
+                  - ec2:TerminateInstances
+                  - ec2:CreateFleet
+                  - ec2:RunInstances
+                  - ec2:CreateTags
+                  - iam:PassRole
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - elasticfilesystem:ClientMount
+                  - elasticfilesystem:ClientWrite
+                  - elasticfilesystem:ClientRootAccess
+                Resource: '*'
+
+  JenkinsControllerInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles:
+        - !Ref JenkinsControllerRole
+
+  JenkinsWorkerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Policies:
+        - PolicyName: JenkinsWorkerPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ec2:DescribeInstances
+                Resource: '*'
+
+  JenkinsWorkerInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles:
+        - !Ref JenkinsWorkerRole
+
+  ####################
+  # EFS File System  #
+  ####################
+  EFSFileSystem:
+    Type: AWS::EFS::FileSystem
+    Properties:
+      Encrypted: true
+      PerformanceMode: generalPurpose
+      ThroughputMode: bursting
+      FileSystemTags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-efs
+
+  EFSMountTarget1:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref EFSFileSystem
+      SubnetId: !Ref PrivateSubnet1
+      SecurityGroups: 
+        - !Ref EFSSecurityGroup
+
+  EFSMountTarget2:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref EFSFileSystem
+      SubnetId: !Ref PrivateSubnet2
+      SecurityGroups: 
+        - !Ref EFSSecurityGroup
+
+  EFSMountTarget3:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref EFSFileSystem
+      SubnetId: !Ref PrivateSubnet3
+      SecurityGroups: 
+        - !Ref EFSSecurityGroup
+
+  ######################
+  # Load Balancer      #
+  ######################
+  JenkinsALB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub ${EnvironmentName}-jenkins-alb
+      Scheme: internet-facing
+      LoadBalancerAttributes:
+        - Key: idle_timeout.timeout_seconds
+          Value: '60'
+      Subnets:
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+        - !Ref PublicSubnet3
+      SecurityGroups:
+        - !Ref ALBSecurityGroup
+
+  JenkinsTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      HealthCheckEnabled: true
+      HealthCheckIntervalSeconds: 30
+      HealthCheckPath: /login
+      HealthCheckPort: 8080
+      HealthCheckProtocol: HTTP
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      Port: 8080
+      Protocol: HTTP
+      TargetType: instance
+      UnhealthyThresholdCount: 5
+      VpcId: !Ref VPC
+
+  JenkinsListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref JenkinsTargetGroup
+      LoadBalancerArn: !Ref JenkinsALB
+      Port: 80
+      Protocol: HTTP
+
+  #########################
+  # Jenkins Controllers   #
+  #########################
+  JenkinsLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateData:
+        ImageId: !Ref LatestAmiId
+        InstanceType: t3a.medium
+        IamInstanceProfile:
+          Name: !Ref JenkinsControllerInstanceProfile
+        SecurityGroupIds:
+          - !Ref JenkinsControllerSecurityGroup
+        KeyName: !Ref KeyName
+        UserData:
+          Fn::Base64: !Sub |
+            #!/bin/bash -xe
+            
+            # Update system
+            yum update -y
+            yum install -y amazon-efs-utils java-11-amazon-corretto-headless
+
+            # Mount EFS
+            JENKINS_HOME="/var/lib/jenkins"
+            mkdir -p ${JENKINS_HOME}
+            mount -t efs ${EFSFileSystem}:/ ${JENKINS_HOME}
+            echo "${EFSFileSystem}:/ ${JENKINS_HOME} efs _netdev,tls 0 0" >> /etc/fstab
+
+            # Install Jenkins
+            wget -O /etc/yum.repos.d/jenkins.repo https://pkg.jenkins.io/redhat-stable/jenkins.repo
+            rpm --import https://pkg.jenkins.io/redhat-stable/jenkins.io-2023.key
+            yum install -y jenkins-${JenkinsVersion}
+
+            # Configure Jenkins
+            cat << EOF > ${JENKINS_HOME}/jenkins.yaml
+            jenkins:
+              systemMessage: "Jenkins HA Setup"
+              numExecutors: 0
+              mode: EXCLUSIVE
+              scmCheckoutRetryCount: 2
+              clouds:
+                - ec2Fleet:
+                    name: "EC2 Fleet"
+                    cloudName: "AWS"
+                    computerConnector:
+                      digitalOceanComputerConnector:
+                        privateKey: ""
+                    idleMinutes: 10
+                    minSize: 0
+                    maxSize: 10
+                    templateFile: "fleet-templates.json"
+                    fsRoot: "/home/jenkins"
+                    labels: "ec2-fleet"
+            security:
+              realm: jenkins
+              securityManager:
+                enabled: true
+            EOF
+
+            # Set permissions
+            chown -R jenkins:jenkins ${JENKINS_HOME}
+            
+            # Start Jenkins
+            systemctl enable jenkins
+            systemctl start jenkins
+
+  JenkinsASG:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      AutoScalingGroupName: !Sub ${EnvironmentName}-jenkins-controllers
+      DesiredCapacity: 2
+      MinSize: 1
+      MaxSize: 3
+      TargetGroupARNs:
+        - !Ref JenkinsTargetGroup
+      VPCZoneIdentifier:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+        - !Ref PrivateSubnet3
+      LaunchTemplate:
+        LaunchTemplateId: !Ref JenkinsLaunchTemplate
+        Version: !GetAtt JenkinsLaunchTemplate.LatestVersionNumber
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-jenkins-controller
+          PropagateAtLaunch: true
+
+  #######################
+  # EC2 Fleet Workers   #
+  #######################
+  WorkerLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateData:
+        ImageId: !Ref LatestAmiId
+        IamInstanceProfile:
+          Name: !Ref JenkinsWorkerInstanceProfile
+        SecurityGroupIds:
+          - !Ref JenkinsWorkerSecurityGroup
+        KeyName: !Ref KeyName
+        UserData:
+          Fn::Base64: !Sub |
+            #!/bin/bash -xe
+            
+            # Update system
+            yum update -y
+            yum install -y java-11-amazon-corretto-headless git docker
+            
+            # Start Docker
+            systemctl enable docker
+            systemctl start docker
+            
+            # Create Jenkins user
+            useradd -m -d /home/jenkins jenkins
+            
+            # Setup Docker permissions
+            usermod -aG docker jenkins
+            
+            # Install required tools
+            yum install -y python3-pip maven
+            
+            # Configure worker node
+            mkdir -p /home/jenkins/workspace
+            chown -R jenkins:jenkins /home/jenkins
+
+  EC2FleetConfiguration:
+    Type: AWS::EC2::EC2Fleet
+    Properties:
+      LaunchTemplateConfigs:
+        - LaunchTemplateSpecification:
+            LaunchTemplateId: !Ref WorkerLaunchTemplate
+            Version: !GetAtt WorkerLaunchTemplate.LatestVersionNumber
+          Overrides:
+            # m6a instances
+            - InstanceType: m6a.large
+              SubnetId: !Ref PrivateSubnet1
+              Priority: 1
+            - InstanceType: m6a.xlarge
+              SubnetId: !Ref PrivateSubnet1
+              Priority: 2
+            - InstanceType: m6a.large
+              SubnetId: !Ref PrivateSubnet2
+              Priority: 1
+            - InstanceType: m6a.xlarge
+              SubnetId: !Ref PrivateSubnet2
+              Priority: 2
+            - InstanceType: m6a.large
+              SubnetId: !Ref PrivateSubnet3
+              Priority: 1
+            - InstanceType: m6a.xlarge
+              SubnetId: !Ref PrivateSubnet3
+              Priority: 2
+            # c6a instances
+            - InstanceType: c6a.large
+              SubnetId: !Ref PrivateSubnet1
+              Priority: 3
+            - InstanceType: c6a.xlarge
+              SubnetId: !Ref PrivateSubnet1
+              Priority: 4
+            - InstanceType: c6a.large
+              SubnetId: !Ref PrivateSubnet2
+              Priority: 3
+            - InstanceType: c6a.xlarge
+              SubnetId: !Ref PrivateSubnet2
+              Priority: 4
+            - InstanceType: c6a.large
+              SubnetId: !Ref PrivateSubnet3
+              Priority: 3
+            - InstanceType: c6a.xlarge
+              SubnetId: !Ref PrivateSubnet3
+              Priority: 4
+            # r6a instances
+            - InstanceType: r6a.large
+              SubnetId: !Ref PrivateSubnet1
+              Priority: 5
+            - InstanceType: r6a.xlarge
+              SubnetId: !Ref PrivateSubnet1
+              Priority: 6
+            - InstanceType: r6a.large
+              SubnetId: !Ref PrivateSubnet2
+              Priority: 5
+            - InstanceType: r6a.xlarge
+              SubnetId: !Ref PrivateSubnet2
+              Priority: 6
+            - InstanceType: r6a.large
+              SubnetId: !Ref PrivateSubnet3
+              Priority: 5
+            - InstanceType: r6a.xlarge
+              SubnetId: !Ref PrivateSubnet3
+              Priority: 6
+      OnDemandOptions:
+        AllocationStrategy: lowest-price
+        CapacityReservationOptions:
+          UsageStrategy: use-capacity-reservations-first
+        MaxTotalPrice: 10.0
+        MinTargetCapacity: 0
+      SpotOptions:
+        AllocationStrategy: capacity-optimized
+        InstanceInterruptionBehavior: terminate
+        MaintenanceStrategies:
+          CapacityRebalance:
+            ReplacementStrategy: launch-before-terminate
+      TargetCapacitySpecification:
+        DefaultTargetCapacityType: spot
+        OnDemandTargetCapacity: 0
+        SpotTargetCapacity: 0
+        TotalTargetCapacity: 0
+      Type: maintain
+
+  LatestAmiId:
+    Type: AWS::SSM::Parameter::Value
+    Default: /aws/service/ami-amazon-linux-2/amzn2-ami-hvm-x86_64-gp2
+
+Outputs:
+  JenkinsURL:
+    Description: Jenkins URL
+    Value: !Sub http://${JenkinsALB.DNSName}
+
+  JenkinsEFS:
+    Description: EFS File System ID
+    Value: !Ref EFSFileSystem
+
+  EC2FleetId:
+    Description: EC2 Fleet ID
+    Value: !Ref EC2FleetConfiguration
