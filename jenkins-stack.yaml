@@ -16,6 +16,10 @@ Parameters:
     Default: "2.426.1"
     Description: Jenkins version to install
 
+  LatestAmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-2/amzn2-ami-hvm-x86_64-gp2
+
 Resources:
   ###################
   # VPC and Network #
@@ -558,10 +562,6 @@ Resources:
         SpotTargetCapacity: 0
         TotalTargetCapacity: 0
       Type: maintain
-
-  LatestAmiId:
-    Type: AWS::SSM::Parameter::Value
-    Default: /aws/service/ami-amazon-linux-2/amzn2-ami-hvm-x86_64-gp2
 
 Outputs:
   JenkinsURL:
