@@ -1,0 +1,9 @@
+template-file-path: ./jenkins-stack.yaml
+parameters:
+    EnvironmentName: jenkins-poc
+    KeyName: REPLACE_WITH_YOUR_KEY_PAIR
+    JenkinsVersion: "2.426.1"
+tags:
+    Project: JenkinsHA
+    Environment: POC
+    ManagedBy: CloudFormation
