@@ -603,18 +603,18 @@ Resources:
                   ADMIN_PASSWORD=$(echo $ADMIN_CREDS | jq -r '.password')
                 - |
                   # Configure Jenkins
-                  cat << \EOF > $JENKINS_HOME/jenkins.yaml
+                  cat << EOF > $JENKINS_HOME/jenkins.yaml
                   jenkins:
                     securityRealm:
                       local:
                         allowsSignup: false
                         users:
-                          - id: "${ADMIN_USER}"
-                            password: "${ADMIN_PASSWORD}"
+                          - id: "$ADMIN_USER"
+                            password: "$ADMIN_PASSWORD"
                     authorizationStrategy:
                       globalMatrix:
                         permissions:
-                          - "Overall/Administer:${ADMIN_USER}"
+                          - "Overall/Administer:$ADMIN_USER"
                     systemMessage: "Jenkins HA Setup"
                     numExecutors: 0
                     mode: EXCLUSIVE
@@ -679,7 +679,7 @@ Resources:
     Properties:
       AutoScalingGroupName: !Sub ${EnvironmentName}-jenkins-controllers
       DesiredCapacity: 2
-      MinSize: 1
+      MinSize: 0
       MaxSize: 3
       TargetGroupARNs:
         - !Ref JenkinsTargetGroup
