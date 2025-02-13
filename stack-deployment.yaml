@@ -1,7 +1,7 @@
 template-file-path: ./master-stack.yaml
 parameters:
     EnvironmentName: jenkins-poc
-    KeyName: REPLACE_WITH_YOUR_KEY_PAIR
+    KeyName: jenkins-demo-us-east-1
 tags:
     Project: JenkinsHA
     Environment: POC
