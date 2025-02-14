@@ -11,10 +11,10 @@ Parameters:
     Type: AWS::EC2::KeyPair::KeyName
     Description: Name of an existing EC2 KeyPair for SSH access
 
-  JenkinsVersion:
-    Type: String
-    Default: "2.426.1"
-    Description: Jenkins version to install
+#  JenkinsVersion:
+ #   Type: String
+  #  Default: "2.426.1"
+   # Description: Jenkins version to install
 
   LatestAmiId:
     Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
@@ -548,7 +548,14 @@ Resources:
             # Install Jenkins
             wget -O /etc/yum.repos.d/jenkins.repo https://pkg.jenkins.io/redhat-stable/jenkins.repo
             rpm --import https://pkg.jenkins.io/redhat-stable/jenkins.io-2023.key
-            yum install -y jenkins-${JenkinsVersion}
+            # Install Jenkins with retries
+            for i in {1..3}; do
+              if yum install -y jenkins; then
+                break
+              fi
+              echo "Attempt $i to install Jenkins failed. Retrying..."
+              sleep 10
+            done
 
             # Create plugin directory and download required plugins
             mkdir -p $JENKINS_HOME/plugins
@@ -597,13 +604,24 @@ Resources:
             Thread.sleep(10000)
             EOF
 
-            # Fetch admin credentials from Secrets Manager
-            ADMIN_CREDS=$(aws secretsmanager get-secret-value \
-              --secret-id ${JenkinsAdminSecret} \
-              --region ${AWS::Region} \
-              --query SecretString --output text)
-            ADMIN_USER=$(echo $ADMIN_CREDS | jq -r '.username')
-            ADMIN_PASSWORD=$(echo $ADMIN_CREDS | jq -r '.password')
+            # Fetch admin credentials from Secrets Manager with retries
+            for i in {1..3}; do
+              if ADMIN_CREDS=$(aws secretsmanager get-secret-value \
+                --secret-id ${JenkinsAdminSecret} \
+                --region ${AWS::Region} \
+                --query SecretString --output text); then
+                ADMIN_USER=$(echo $ADMIN_CREDS | jq -r '.username')
+                ADMIN_PASSWORD=$(echo $ADMIN_CREDS | jq -r '.password')
+                break
+              fi
+              echo "Attempt $i to fetch admin credentials failed. Retrying..."
+              sleep 10
+            done
+
+            if [ -z "$ADMIN_USER" ] || [ -z "$ADMIN_PASSWORD" ]; then
+              echo "Failed to fetch admin credentials"
+              exit 1
+            fi
 
             # Create user creation script with proper sequencing
             cat << EOF > $JENKINS_HOME/init.groovy.d/create-user.groovy
@@ -645,6 +663,14 @@ Resources:
             EOF
 
             # Configure Jenkins CasC
+            # Get EC2 Fleet ID
+            EC2_FLEET_ID=$(aws cloudformation describe-stack-resources \
+              --stack-name ${AWS::StackName} \
+              --logical-resource-id EC2FleetConfiguration \
+              --region ${AWS::Region} \
+              --query 'StackResources[0].PhysicalResourceId' \
+              --output text)
+
             cat << EOF > $JENKINS_HOME/jenkins.yaml
             jenkins:
               securityRealm:
@@ -677,7 +703,7 @@ Resources:
                     minSize: 0
                     maxSize: 10
                     fleetConfig:
-                      fleetId: !Ref EC2FleetConfiguration
+                      fleetId: "${EC2FleetConfiguration}"
                       fsRoot: "/home/jenkins"
                       labels: "ec2-fleet"
                       instanceCapStr: "10"
@@ -703,9 +729,23 @@ Resources:
             chmod 700 $JENKINS_HOME
             chmod 600 $JENKINS_HOME/jenkins.yaml
 
+            # Set correct permissions on Jenkins home
+            chown -R jenkins:jenkins $JENKINS_HOME
+            chmod -R 750 $JENKINS_HOME
+            
             # Start Jenkins
             systemctl enable jenkins
             systemctl start jenkins
+            
+            # Wait for Jenkins to initialize
+            echo "Waiting for Jenkins to initialize..."
+            until curl -s -f http://localhost:8080/login > /dev/null || [ $? -eq 22 ]; do
+              sleep 10
+              echo "Still waiting for Jenkins..."
+            done
+            
+            # Additional wait to ensure Jenkins is fully initialized
+            sleep 30
 
             # Wait for Jenkins to be available
             timeout 300 bash -c 'while [[ "$(curl -s -o /dev/null -w ''%{http_code}'' localhost:8080)" != "200" ]]; do sleep 5; done' || false
@@ -715,7 +755,6 @@ Resources:
               --stack ${AWS::StackName} \
               --resource JenkinsASG \
               --region ${AWS::Region}
-
 
   JenkinsASG:
     Type: AWS::AutoScaling::AutoScalingGroup
