@@ -533,6 +533,7 @@ Resources:
             yum install -y jq amazon-efs-utils wget curl
 
             # Install Java 17
+            amazon-linux-extras enable corretto17
             yum install -y java-17-amazon-corretto-headless
 
             # Mount EFS with better error handling
@@ -554,10 +555,12 @@ Resources:
               echo "Failed to mount EFS after 3 attempts"
               exit 1
             fi
-            
-            # Set initial permissions
+
+            # Create Jenkins user and group
             groupadd -r jenkins
             useradd -r -g jenkins -d $JENKINS_HOME -s /sbin/nologin jenkins
+
+            # Set initial permissions
             chown -R jenkins:jenkins $JENKINS_HOME
             chmod -R 755 $JENKINS_HOME
             echo "${EFSFileSystem}:/ $JENKINS_HOME efs _netdev,tls,noatime 0 0" >> /etc/fstab
@@ -770,15 +773,14 @@ Resources:
             After=network.target
 
             [Service]
-            Type=notify
-            NotifyAccess=main
-            ExecStart=/usr/bin/jenkins
+            Type=simple
+            Environment="JENKINS_HOME=/var/lib/jenkins"
+            Environment="JAVA_HOME=/usr/lib/jvm/java-17-amazon-corretto"
+            User=jenkins
+            ExecStart=/usr/bin/java -Djava.awt.headless=true -jar /usr/share/java/jenkins.war --webroot=/var/cache/jenkins/war --httpPort=8080
             Restart=on-failure
             RestartSec=10
             SuccessExitStatus=143
-            User=jenkins
-            Environment="JENKINS_HOME=/var/lib/jenkins"
-            Environment="JAVA_HOME=/usr/lib/jvm/java-17-amazon-corretto"
 
             [Install]
             WantedBy=multi-user.target
@@ -858,7 +860,7 @@ Resources:
               --stack ${AWS::StackName} \
               --resource JenkinsASG \
               --region ${AWS::Region}
-  
+
   JenkinsASG:
     Type: AWS::AutoScaling::AutoScalingGroup
     Properties:
