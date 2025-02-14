@@ -530,10 +530,10 @@ Resources:
 
             # Update system and install dependencies
             yum update -y
-            yum install -y jq amazon-efs-utils wget curl
+            yum install -y jq amazon-efs-utils wget
 
             # Install Java 17
-            yum install -y java-17-amazon-corretto-headless groovy
+            yum install -y java-17-amazon-corretto-headless
 
             # Mount EFS with better error handling
             JENKINS_HOME="/var/lib/jenkins"
@@ -861,7 +861,7 @@ Resources:
     Type: AWS::AutoScaling::AutoScalingGroup
     Properties:
       AutoScalingGroupName: !Sub ${EnvironmentName}-jenkins-controllers
-      DesiredCapacity: 2
+      DesiredCapacity: 1
       MinSize: 0
       MaxSize: 3
       TargetGroupARNs:
