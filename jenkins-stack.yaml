@@ -533,7 +533,6 @@ Resources:
             yum install -y jq amazon-efs-utils wget curl
 
             # Install Java 17
-            amazon-linux-extras enable corretto17
             yum install -y java-17-amazon-corretto-headless
 
             # Mount EFS with better error handling
