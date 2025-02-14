@@ -588,22 +588,27 @@ Resources:
             echo "Installing Jenkins Plugin CLI..."
             mkdir -p /usr/lib/jenkins
             JENKINS_VERSION=$(yum info jenkins | grep Version | awk '{print $3}')
-            wget -O /usr/lib/jenkins/jenkins-plugin-manager.jar https://github.com/jenkinsci/plugin-installation-manager-tool/releases/download/2.12.13/jenkins-plugin-manager-2.12.13.jar
+            wget -O /usr/lib/jenkins/jenkins-plugin-manager.jar https://github.com/jenkinsci/plugin-installation-manager-tool/releases/download/2.13.2/jenkins-plugin-manager-2.13.2.jar
 
             # Create plugins list file
             cat << EOF > /tmp/plugins.txt
-            aws-credentials:latest
-            aws-java-sdk:latest
-            configuration-as-code:latest
-            commons-text-api:latest
-            json-api:latest
-            prism-api:latest
-            ec2-fleet:latest
-            credentials:latest
-            workflow-aggregator:latest
-            git:latest
-            matrix-auth:latest
-            authorize-project:latest
+            git-client
+            scm-api
+            ssh-credentials
+            pipeline-model-extensions
+            cloudbees-folder
+            aws-credentials
+            aws-java-sdk
+            configuration-as-code
+            commons-text-api
+            json-api
+            prism-api
+            ec2-fleet
+            credentials
+            workflow-aggregator
+            git
+            matrix-auth
+            authorize-project
             EOF
 
             # Install plugins with dependencies using Plugin CLI
