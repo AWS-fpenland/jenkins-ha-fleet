@@ -524,156 +524,199 @@ Resources:
           HttpTokens: required
           HttpEndpoint: enabled
         UserData:
-          Fn::Base64:
-            Fn::Join:
-              - ""
-              - - |
-                  #!/bin/bash -xe
-                  
-                  # Update system
-                  yum update -y
-                  yum install -y jq amazon-efs-utils java-11-amazon-corretto-headless wget curl
+          Fn::Base64: !Sub |
+            #!/bin/bash -xe
 
-                  # Mount EFS
-                  JENKINS_HOME="/var/lib/jenkins"
-                  mkdir -p $JENKINS_HOME
-                - !Sub |
-                  mount -t efs ${EFSFileSystem}:/ $JENKINS_HOME
-                  echo "${EFSFileSystem}:/ $JENKINS_HOME efs _netdev,tls,noatime 0 0" >> /etc/fstab
-                - |
-                  # System optimizations
-                  cat << 'EOF' > /etc/security/limits.d/jenkins.conf
-                  jenkins soft nofile 4096
-                  jenkins hard nofile 8192
-                  jenkins soft nproc 30654
-                  jenkins hard nproc 30654
-                  EOF
+            # Update system
+            yum update -y
+            yum install -y jq amazon-efs-utils java-11-amazon-corretto-headless wget curl
 
-                  # Install Jenkins
-                - !Sub |
-                  wget -O /etc/yum.repos.d/jenkins.repo https://pkg.jenkins.io/redhat-stable/jenkins.repo
-                  rpm --import https://pkg.jenkins.io/redhat-stable/jenkins.io-2023.key
-                  yum install -y jenkins-${JenkinsVersion}
-                - |
-                  # Create plugin directory and download required plugins
-                  mkdir -p $JENKINS_HOME/plugins
-                  cd $JENKINS_HOME/plugins
+            # Mount EFS
+            JENKINS_HOME="/var/lib/jenkins"
+            mkdir -p $JENKINS_HOME
+            mount -t efs ${EFSFileSystem}:/ $JENKINS_HOME
+            echo "${EFSFileSystem}:/ $JENKINS_HOME efs _netdev,tls,noatime 0 0" >> /etc/fstab
 
-                  # Download required plugins
-                  for plugin in ec2-fleet configuration-as-code credentials workflow-aggregator git; do
-                    for retry in {1..3}; do
-                      if wget -q "https://updates.jenkins.io/latest/${plugin}.hpi" || \
-                         wget -q "https://updates.jenkins.io/latest/${plugin}.jpi"; then
-                        break
-                      fi
-                      if [ $retry -eq 3 ]; then
-                        echo "Failed to download plugin ${plugin} after 3 attempts"
-                      else
-                        echo "Retry ${retry} for plugin ${plugin}"
-                        sleep 5
-                      fi
-                    done
-                  done
+            # System optimizations
+            cat << 'EOF' > /etc/security/limits.d/jenkins.conf
+            jenkins soft nofile 4096
+            jenkins hard nofile 8192
+            jenkins soft nproc 30654
+            jenkins hard nproc 30654
+            EOF
 
-                  # Configure Java options
-                  cat << 'EOF' > /etc/sysconfig/jenkins
-                  JENKINS_JAVA_OPTIONS="-Xmx2048m -Djava.awt.headless=true -Djenkins.install.runSetupWizard=false"
-                  JENKINS_PORT="8080"
-                  EOF
+            # Install Jenkins
+            wget -O /etc/yum.repos.d/jenkins.repo https://pkg.jenkins.io/redhat-stable/jenkins.repo
+            rpm --import https://pkg.jenkins.io/redhat-stable/jenkins.io-2023.key
+            yum install -y jenkins-${JenkinsVersion}
 
-                  # Create init groovy script
-                  mkdir -p $JENKINS_HOME/init.groovy.d
-                  cat << 'EOF' > $JENKINS_HOME/init.groovy.d/disable-setup-wizard.groovy
-                  import jenkins.model.*
-                  import hudson.util.*;
-                  import jenkins.install.*;
+            # Create plugin directory and download required plugins
+            mkdir -p $JENKINS_HOME/plugins
+            cd $JENKINS_HOME/plugins
 
-                  def instance = Jenkins.getInstance()
-                  instance.setInstallState(InstallState.INITIAL_SETUP_COMPLETED)
-                  instance.save()
-                  EOF
+            # Download required plugins with retry logic
+            echo "Downloading required plugins..."
+            for plugin in ec2-fleet configuration-as-code credentials workflow-aggregator git matrix-auth authorize-project; do
+              for retry in {1..3}; do
+                if wget -q "https://updates.jenkins.io/download/plugins/$plugin/latest/$plugin.hpi"; then
+                  break
+                fi
+                if [ $retry -eq 3 ]; then
+                  echo "Failed to download plugin $plugin after 3 attempts"
+                  exit 1
+                else
+                  echo "Retry $retry for plugin $plugin"
+                  sleep 5
+                fi
+              done
+            done
 
-                  # Fetch admin credentials from Secrets Manager
-                - !Sub |
-                  ADMIN_CREDS=$(aws secretsmanager get-secret-value \
-                    --secret-id ${JenkinsAdminSecret} \
-                    --region ${AWS::Region} \
-                    --query SecretString --output text)
-                  ADMIN_USER=$(echo $ADMIN_CREDS | jq -r '.username')
-                  ADMIN_PASSWORD=$(echo $ADMIN_CREDS | jq -r '.password')
-                - |
-                  # Configure Jenkins
-                  cat << EOF > $JENKINS_HOME/jenkins.yaml
-                  jenkins:
-                    securityRealm:
-                      local:
-                        allowsSignup: false
-                        users:
-                          - id: "$ADMIN_USER"
-                            password: "$ADMIN_PASSWORD"
-                    authorizationStrategy:
-                      globalMatrix:
-                        permissions:
-                          - "Overall/Administer:$ADMIN_USER"
-                    systemMessage: "Jenkins HA Setup"
-                    numExecutors: 0
-                    mode: EXCLUSIVE
-                    scmCheckoutRetryCount: 2
-                    quietPeriod: 5
-                    remotingSecurity:
-                      enabled: true
-                    clouds:
-                      - ec2Fleet:
-                          name: "EC2 Fleet"
-                          cloudName: "AWS"
-                          computerConnector:
-                            digitalOceanComputerConnector:
-                              privateKey: ""
-                          idleMinutes: 10
-                          minSize: 0
-                          maxSize: 10
-                          templateFile: "fleet-templates.json"
-                          fsRoot: "/home/jenkins"
-                          labels: "ec2-fleet"
-                          instanceCapStr: "10"
-                          minimumNumberOfSpareInstances: 1
-                          scaleExecutorsByWeight: true
-                  security:
-                    securityManager:
-                      enabled: true
-                    csrf:
-                      defaultCrumbIssuer:
-                        enabled: true
-                  tool:
-                    git:
-                      installations:
-                        - name: "Default"
-                          home: "git"
-                  EOF
+            # Configure Java options with proper memory settings
+            cat << EOF > /etc/sysconfig/jenkins
+            JENKINS_JAVA_OPTIONS="-Xmx2048m -Djava.awt.headless=true -Djenkins.install.runSetupWizard=false -Dhudson.model.DirectoryBrowserSupport.CSP="
+            JENKINS_PORT="8080"
+            EOF
 
-                  # Set permissions
-                  chown -R jenkins:jenkins $JENKINS_HOME
-                  chmod 700 $JENKINS_HOME
-                  chmod 600 $JENKINS_HOME/jenkins.yaml
+            # Create init groovy script for security setup
+            mkdir -p $JENKINS_HOME/init.groovy.d
+            cat << 'EOF' > $JENKINS_HOME/init.groovy.d/basic-security.groovy
+            import jenkins.model.*
+            import hudson.security.*
+            import jenkins.install.*
+            import hudson.util.Secret
+            import com.cloudbees.plugins.credentials.*
+            import com.cloudbees.plugins.credentials.domains.*
+            import org.jenkinsci.plugins.plaincredentials.impl.*
 
-                  # Start Jenkins
-                  systemctl enable jenkins
-                  systemctl start jenkins
+            def instance = Jenkins.getInstance()
+            
+            // Ensure Jenkins is in initial setup mode
+            instance.setInstallState(InstallState.INITIAL_SETUP_COMPLETED)
+            
+            // Wait for initialization
+            Thread.sleep(10000)
+            EOF
 
-                  # Wait for Jenkins to be available
-                  timeout 300 bash -c 'while [[ "$(curl -s -o /dev/null -w ''%{http_code}'' localhost:8080)" != "200" ]]; do sleep 5; done' || false
-                - !Sub |
-                  # Signal completion
-                  /opt/aws/bin/cfn-signal -e $? \
-                    --stack ${AWS::StackName} \
-                    --resource JenkinsASG \
-                    --region ${AWS::Region}
-        TagSpecifications:
-          - ResourceType: instance
-            Tags:
-              - Key: Name
-                Value: !Sub ${EnvironmentName}-jenkins-controller
-  
+            # Fetch admin credentials from Secrets Manager
+            ADMIN_CREDS=$(aws secretsmanager get-secret-value \
+              --secret-id ${JenkinsAdminSecret} \
+              --region ${AWS::Region} \
+              --query SecretString --output text)
+            ADMIN_USER=$(echo $ADMIN_CREDS | jq -r '.username')
+            ADMIN_PASSWORD=$(echo $ADMIN_CREDS | jq -r '.password')
+
+            # Create user creation script with proper sequencing
+            cat << EOF > $JENKINS_HOME/init.groovy.d/create-user.groovy
+            import jenkins.model.*
+            import hudson.security.*
+            import hudson.security.csrf.DefaultCrumbIssuer
+
+            def instance = Jenkins.getInstance()
+            
+            // Wait for Jenkins to be available
+            Thread.sleep(15000)
+            
+            // Create security realm
+            def hudsonRealm = new HudsonPrivateSecurityRealm(false)
+            instance.setSecurityRealm(hudsonRealm)
+            
+            // Create admin user
+            def adminUsername = "$ADMIN_USER"
+            def adminPassword = "$ADMIN_PASSWORD"
+            
+            // Delete the user if it exists already
+            def user = hudsonRealm.getAllUsers().find { it.id == adminUsername }
+            if (user) {
+                hudsonRealm.deleteUser(adminUsername)
+            }
+            
+            // Create the admin user
+            hudsonRealm.createAccount(adminUsername, adminPassword)
+            
+            // Set up authorization strategy
+            def strategy = new GlobalMatrixAuthorizationStrategy()
+            strategy.add(Jenkins.ADMINISTER, adminUsername)
+            instance.setAuthorizationStrategy(strategy)
+            
+            // Enable CSRF protection
+            instance.setCrumbIssuer(new DefaultCrumbIssuer(true))
+            
+            instance.save()
+            EOF
+
+            # Configure Jenkins CasC
+            cat << EOF > $JENKINS_HOME/jenkins.yaml
+            jenkins:
+              securityRealm:
+                local:
+                  allowsSignup: false
+                  enableCaptcha: false
+              authorizationStrategy:
+                globalMatrix:
+                  permissions:
+                    - "Overall/Administer:$ADMIN_USER"
+              systemMessage: "Jenkins HA Setup"
+              numExecutors: 0
+              mode: EXCLUSIVE
+              scmCheckoutRetryCount: 2
+              quietPeriod: 5
+              remotingSecurity:
+                enabled: true
+              clouds:
+                - ec2Fleet:
+                    name: "EC2 Fleet"
+                    cloudName: "AWS"
+                    region: "${AWS::Region}"
+                    computerConnector:
+                      jnlp:
+                        workDirSettings:
+                          disabled: false
+                          failIfWorkDirIsMissing: false
+                          internalDir: "remoting"
+                    idleMinutes: 10
+                    minSize: 0
+                    maxSize: 10
+                    fleetConfig:
+                      fleetId: !Ref EC2FleetConfiguration
+                      fsRoot: "/home/jenkins"
+                      labels: "ec2-fleet"
+                      instanceCapStr: "10"
+                      minimumNumberOfSpareInstances: 1
+                      scaleExecutorsByWeight: true
+            security:
+              globalJobDslSecurityConfiguration:
+                useScriptSecurity: false
+              securityManager:
+                enabled: true
+              csrf:
+                defaultCrumbIssuer:
+                  enabled: true
+            tool:
+              git:
+                installations:
+                  - name: "Default"
+                    home: "git"
+            EOF
+
+            # Set permissions
+            chown -R jenkins:jenkins $JENKINS_HOME
+            chmod 700 $JENKINS_HOME
+            chmod 600 $JENKINS_HOME/jenkins.yaml
+
+            # Start Jenkins
+            systemctl enable jenkins
+            systemctl start jenkins
+
+            # Wait for Jenkins to be available
+            timeout 300 bash -c 'while [[ "$(curl -s -o /dev/null -w ''%{http_code}'' localhost:8080)" != "200" ]]; do sleep 5; done' || false
+
+            # Signal completion to CloudFormation
+            /opt/aws/bin/cfn-signal -e $? \
+              --stack ${AWS::StackName} \
+              --resource JenkinsASG \
+              --region ${AWS::Region}
+
+
   JenkinsASG:
     Type: AWS::AutoScaling::AutoScalingGroup
     Properties:

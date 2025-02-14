@@ -1,0 +1,46 @@
+jenkins:
+  securityRealm:
+    local:
+      allowsSignup: false
+      enableCaptcha: false
+  authorizationStrategy:
+    globalMatrix:
+      permissions:
+        - "Overall/Administer:admin"
+  systemMessage: "Jenkins HA Setup"
+  numExecutors: 0
+  mode: EXCLUSIVE
+  scmCheckoutRetryCount: 2
+  quietPeriod: 5
+  remotingSecurity:
+    enabled: true
+  clouds:
+    - ec2Fleet:
+        name: "EC2 Fleet"
+        cloudName: "AWS"
+        computerConnector:
+          digitalOceanComputerConnector:
+            privateKey: ""
+        idleMinutes: 10
+        minSize: 0
+        maxSize: 10
+        templateFile: "fleet-templates.json"
+        fsRoot: "/home/jenkins"
+        labels: "ec2-fleet"
+        instanceCapStr: "10"
+        minimumNumberOfSpareInstances: 1
+        scaleExecutorsByWeight: true
+
+security:
+  securityManager:
+    enabled: true
+  csrf:
+    defaultCrumbIssuer:
+      enabled: true
+
+unclassified:
+  securityRealm:
+    local:
+      users:
+      - id: "admin"
+        password: "3Y1xW]4I_md:D$ep"
