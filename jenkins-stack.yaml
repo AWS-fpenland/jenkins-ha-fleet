@@ -554,8 +554,10 @@ Resources:
               echo "Failed to mount EFS after 3 attempts"
               exit 1
             fi
-
+            
             # Set initial permissions
+            groupadd -r jenkins
+            useradd -r -g jenkins -d $JENKINS_HOME -s /sbin/nologin jenkins
             chown -R jenkins:jenkins $JENKINS_HOME
             chmod -R 755 $JENKINS_HOME
             echo "${EFSFileSystem}:/ $JENKINS_HOME efs _netdev,tls,noatime 0 0" >> /etc/fstab
