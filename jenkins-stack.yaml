@@ -592,23 +592,62 @@ Resources:
 
             # Create plugins list file
             cat << EOF > /tmp/plugins.txt
+            # Core Dependencies
+            credentials-binding
             git-client
             scm-api
             ssh-credentials
             pipeline-model-extensions
+            json-api
             cloudbees-folder
+            credentials
+            git
+            github
+            github-branch-source
+            pipeline-github-lib
+
+            # AWS Core Plugins
             aws-credentials
             aws-java-sdk
+            aws-java-sdk2-ec2
+            aws-java-sdk-ec2
+
+            # AWS SDK Components
+            aws-java-sdk-minimal
+            aws-java-sdk-codebuild
+            aws-java-sdk-api-gateway
+            aws-java-sdk-cloudwatch
+            aws-java-sdk-cloudformation
+            aws-java-sdk-efs
+            aws-java-sdk-elasticloadbalancingv2
+            aws-java-sdk-lambda
+            aws-java-sdk-kinesis
+            aws-java-sdk-secretsmanager
+            aws-java-sdk-codedeploy
+            aws-java-sdk-ecr
+            aws-java-sdk-ecs
+            aws-java-sdk-organizations
+            aws-java-sdk-elasticbeanstalk
+            aws-java-sdk-sqs
+            aws-java-sdk-ssm
+            aws-java-sdk-logs
+            aws-java-sdk-cloudfront
+            aws-java-sdk-ec2
+            aws-java-sdk-sns
+            aws-java-sdk-autoscaling
+            aws-java-sdk-iam
+
+            # Configuration and Authorization Plugins
             configuration-as-code
+            matrix-authorization-strategy
+            authorize-project
+            matrix-auth
+
+            # Additional Required Plugins
             commons-text-api
-            json-api
             prism-api
             ec2-fleet
-            credentials
             workflow-aggregator
-            git
-            matrix-auth
-            authorize-project
             EOF
 
             # Install plugins with dependencies using Plugin CLI
