@@ -639,7 +639,7 @@ Resources:
 
             # Configuration and Authorization Plugins
             configuration-as-code
-            matrix-authorization-strategy
+            matrix-auth
             authorize-project
             matrix-auth
 
