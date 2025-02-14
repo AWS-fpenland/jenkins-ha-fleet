@@ -11,10 +11,10 @@ Parameters:
     Type: AWS::EC2::KeyPair::KeyName
     Description: Name of an existing EC2 KeyPair for SSH access
 
-#  JenkinsVersion:
- #   Type: String
-  #  Default: "2.426.1"
-   # Description: Jenkins version to install
+  JenkinsVersion:
+    Type: String
+    Default: "2.426.1"
+    Description: Jenkins version to install
 
   LatestAmiId:
     Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
