@@ -590,10 +590,8 @@ Resources:
             JENKINS_VERSION=$(yum info jenkins | grep Version | awk '{print $3}')
             wget -O /usr/lib/jenkins/jenkins-plugin-manager.jar https://github.com/jenkinsci/plugin-installation-manager-tool/releases/download/2.12.13/jenkins-plugin-manager-2.12.13.jar
 
-            # Install plugins with dependencies using Plugin CLI
-            java -jar /usr/lib/jenkins/jenkins-plugin-manager.jar \
-              --war /usr/share/java/jenkins.war \
-              --plugin-file /dev/stdin <<EOF
+            # Create plugins list file
+            cat << EOF > /tmp/plugins.txt
             aws-credentials:latest
             aws-java-sdk:latest
             configuration-as-code:latest
@@ -607,6 +605,11 @@ Resources:
             matrix-auth:latest
             authorize-project:latest
             EOF
+
+            # Install plugins with dependencies using Plugin CLI
+            java -jar /usr/lib/jenkins/jenkins-plugin-manager.jar \
+              --war /usr/share/java/jenkins.war \
+              --plugin-file /tmp/plugins.txt
 
             # Configure Java options with proper memory settings
             cat << EOF > /etc/sysconfig/jenkins
