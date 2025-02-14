@@ -586,6 +586,7 @@ Resources:
 
             # Install Jenkins Plugin CLI and manage plugins
             echo "Installing Jenkins Plugin CLI..."
+            mkdir -p /usr/lib/jenkins
             JENKINS_VERSION=$(yum info jenkins | grep Version | awk '{print $3}')
             wget -O /usr/lib/jenkins/jenkins-plugin-manager.jar https://github.com/jenkinsci/plugin-installation-manager-tool/releases/download/2.12.13/jenkins-plugin-manager-2.12.13.jar
 
