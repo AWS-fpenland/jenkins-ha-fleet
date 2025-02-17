@@ -82,3 +82,28 @@ This repository contains CloudFormation templates for deploying a highly availab
 - `security-stack.yaml`: IAM roles and security groups
 - `jenkins-controller.yaml`: Jenkins controller configuration
 - `jenkins-workers.yaml`: EC2 Fleet worker configuration
+
+
+#### Retrive jenkins secret
+
+```
+aws secretsmanager get-secret-value \
+    --secret-id jenkins-poc-jenkins-admin-credentials \
+    --query SecretString --output text | jq -r '.password' \
+    --profile netcore
+```
+
+0cba67150ee74a318e846ace16e7fc56
+
+http://jenkins-poc-jenkins-alb-2014278711.us-east-1.elb.amazonaws.com/
+
+3Y1xW]4I_md:D$ep
+
+aws autoscaling set-desired-capacity \
+    --auto-scaling-group-name jenkins-poc-jenkins-controllers \
+    --desired-capacity 0 \
+    --region us-east-1 \
+    --profile netcore
+
+
+java -jar jenkins-plugin-manager-*.jar --war /your/path/to/jenkins.war --plugin-download-directory /your/path/to/plugins/ --plugin-file /your/path/to/plugins.txt --plugins delivery-pipeline-plugin:1.3.2 deployit-plugin

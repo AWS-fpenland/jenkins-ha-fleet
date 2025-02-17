@@ -592,7 +592,6 @@ Resources:
 
             # Create plugins list file
             cat << EOF > /tmp/plugins.txt
-            # Core Dependencies
             credentials-binding
             git-client
             scm-api
@@ -605,14 +604,10 @@ Resources:
             github
             github-branch-source
             pipeline-github-lib
-
-            # AWS Core Plugins
             aws-credentials
             aws-java-sdk
             aws-java-sdk2-ec2
             aws-java-sdk-ec2
-
-            # AWS SDK Components
             aws-java-sdk-minimal
             aws-java-sdk-codebuild
             aws-java-sdk-api-gateway
@@ -636,14 +631,10 @@ Resources:
             aws-java-sdk-sns
             aws-java-sdk-autoscaling
             aws-java-sdk-iam
-
-            # Configuration and Authorization Plugins
             configuration-as-code
             matrix-auth
             authorize-project
             matrix-auth
-
-            # Additional Required Plugins
             commons-text-api
             prism-api
             ec2-fleet
