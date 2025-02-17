@@ -562,6 +562,8 @@ Resources:
             # Set initial permissions
             chown -R jenkins:jenkins $JENKINS_HOME
             chmod -R 755 $JENKINS_HOME
+            find $JENKINS_HOME -type d -exec chmod 755 {} \;
+            find $JENKINS_HOME -type f -exec chmod 644 {} \;
             echo "${EFSFileSystem}:/ $JENKINS_HOME efs _netdev,tls,noatime 0 0" >> /etc/fstab
 
             # System optimizations
@@ -588,22 +590,25 @@ Resources:
             echo "Installing Jenkins Plugin CLI..."
             mkdir -p /usr/lib/jenkins
             JENKINS_VERSION=$(yum info jenkins | grep Version | awk '{print $3}')
-            wget -O /usr/lib/jenkins/jenkins-plugin-manager.jar https://github.com/jenkinsci/plugin-installation-manager-tool/releases/download/2.13.2/jenkins-plugin-manager-2.13.2.jar
+            PLUGIN_MANAGER_JAR="/usr/lib/jenkins/jenkins-plugin-manager.jar"
+
+            echo "Downloading Plugin Manager..."
+            if ! wget -O $PLUGIN_MANAGER_JAR https://github.com/jenkinsci/plugin-installation-manager-tool/releases/download/2.13.2/jenkins-plugin-manager-2.13.2.jar; then
+                echo "Failed to download Plugin Manager"
+                exit 1
+            fi
 
             # Create plugins list file
+            echo "Creating plugins list..."
             cat << EOF > /tmp/plugins.txt
-            credentials-binding
-            git-client
-            scm-api
-            ssh-credentials
-            pipeline-model-extensions
-            json-api
-            cloudbees-folder
-            credentials
-            git
-            github
-            github-branch-source
-            pipeline-github-lib
+            instance-identity
+            bouncycastle-api
+            jakarta-mail-api
+            javax-activation-api
+            javax-mail-api
+            sshd
+            ssh-slaves
+            jnlp-agent
             aws-credentials
             aws-java-sdk
             aws-java-sdk2-ec2
@@ -627,24 +632,56 @@ Resources:
             aws-java-sdk-ssm
             aws-java-sdk-logs
             aws-java-sdk-cloudfront
-            aws-java-sdk-ec2
             aws-java-sdk-sns
             aws-java-sdk-autoscaling
             aws-java-sdk-iam
-            configuration-as-code
+            git-client
+            scm-api
+            git
+            github
+            github-branch-source
+            pipeline-github-lib
+            credentials-binding
+            credentials
             matrix-auth
             authorize-project
-            matrix-auth
+            workflow-aggregator
+            pipeline-model-extensions
+            cloudbees-folder
+            configuration-as-code
+            ec2-fleet
+            json-api
             commons-text-api
             prism-api
-            ec2-fleet
-            workflow-aggregator
             EOF
 
-            # Install plugins with dependencies using Plugin CLI
-            java -jar /usr/lib/jenkins/jenkins-plugin-manager.jar \
-              --war /usr/share/java/jenkins.war \
-              --plugin-file /tmp/plugins.txt
+            echo "Installing plugins..."
+            java -jar $PLUGIN_MANAGER_JAR \
+                --verbose \
+                --war /usr/share/java/jenkins.war \
+                --plugin-file /tmp/plugins.txt \
+                --plugin-download-directory $JENKINS_HOME/plugins > /var/log/jenkins/plugin_installation.log 2>&1
+
+            PLUGIN_EXIT_CODE=$?
+
+            if [ $PLUGIN_EXIT_CODE -ne 0 ]; then
+                echo "Plugin installation failed with exit code: $PLUGIN_EXIT_CODE"
+                echo "Last 50 lines of plugin installation log:"
+                tail -n 50 /var/log/jenkins/plugin_installation.log
+                exit 1
+            fi
+
+            echo "Verifying plugin installation..."
+            PLUGIN_COUNT=$(ls -1 $JENKINS_HOME/plugins/*.jpi 2>/dev/null | wc -l)
+            echo "Number of plugins installed: $PLUGIN_COUNT"
+
+            if [ $PLUGIN_COUNT -eq 0 ]; then
+                echo "No plugins were installed. Installation failed."
+                cat /var/log/jenkins/plugin_installation.log
+                exit 1
+            fi
+
+            echo "Plugin installation completed successfully"
 
             # Configure Java options with proper memory settings
             cat << EOF > /etc/sysconfig/jenkins
@@ -765,7 +802,7 @@ Resources:
                     cloudName: "AWS"
                     region: "${AWS::Region}"
                     computerConnector:
-                      jnlp:
+                      hudson.slaves.JNLPLauncher:
                         workDirSettings:
                           disabled: false
                           failIfWorkDirIsMissing: false
@@ -826,7 +863,7 @@ Resources:
             # Configure Jenkins options
             cat << 'EOF' > /etc/sysconfig/jenkins
             JENKINS_HOME=/var/lib/jenkins
-            JENKINS_JAVA_OPTIONS="-Djava.awt.headless=true -Djenkins.install.runSetupWizard=false -Dorg.apache.commons.jelly.tags.fmt.timeZone=America/New_York"
+            JENKINS_JAVA_OPTIONS="-Djava.awt.headless=true -Djenkins.install.runSetupWizard=false -Dorg.apache.commons.jelly.tags.fmt.timeZone=America/New_York -Dhudson.model.DirectoryBrowserSupport.CSP="
             JENKINS_PORT="8080"
             JENKINS_USER="jenkins"
             JENKINS_JAVA_CMD="/usr/lib/jvm/java-17-amazon-corretto/bin/java"
