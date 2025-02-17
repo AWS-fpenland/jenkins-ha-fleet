@@ -586,26 +586,47 @@ Resources:
               sleep 10
             done
 
-            # Install Jenkins Plugin CLI and manage plugins
-            echo "Installing Jenkins Plugin CLI..."
-            mkdir -p /usr/lib/jenkins
-            JENKINS_VERSION=$(yum info jenkins | grep Version | awk '{print $3}')
-            PLUGIN_MANAGER_JAR="/usr/lib/jenkins/jenkins-plugin-manager.jar"
+            # Verify EFS mount is ready and has correct permissions
+            echo "Verifying EFS mount..."
+            if ! mountpoint -q $JENKINS_HOME; then
+                echo "EFS mount point $JENKINS_HOME is not mounted"
+                exit 1
+            fi
 
-            # Create necessary directories
+            # Ensure proper permissions before plugin installation
+            echo "Setting up permissions for Jenkins home..."
+            chown -R jenkins:jenkins $JENKINS_HOME
+            chmod -R 755 $JENKINS_HOME
+            find $JENKINS_HOME -type d -exec chmod 755 {} \;
+            find $JENKINS_HOME -type f -exec chmod 644 {} \;
+
+            # Create plugin directories on EFS
+            echo "Creating plugin directories..."
+            mkdir -p $JENKINS_HOME/plugins
+            if [ $? -ne 0 ]; then
+                echo "Failed to create plugins directory on EFS mount"
+                exit 1
+            fi
+
             mkdir -p /var/log/jenkins
+            if [ $? -ne 0 ]; then
+                echo "Failed to create log directory"
+                exit 1
+            fi
+
             chown jenkins:jenkins /var/log/jenkins
             chmod 755 /var/log/jenkins
 
             echo "Downloading Plugin Manager..."
+            PLUGIN_MANAGER_JAR="$JENKINS_HOME/plugin-manager.jar"
             if ! wget -O $PLUGIN_MANAGER_JAR https://github.com/jenkinsci/plugin-installation-manager-tool/releases/download/2.13.2/jenkins-plugin-manager-2.13.2.jar; then
-                echo "Failed to download Plugin Manager"
+                echo "Failed to download Plugin Manager to EFS"
                 exit 1
             fi
 
-            # Create plugins list file
             echo "Creating plugins list..."
-            cat << EOF > /tmp/plugins.txt
+            PLUGINS_FILE="$JENKINS_HOME/plugins.txt"
+            cat << EOF > $PLUGINS_FILE || { echo "Failed to create plugins.txt on EFS"; exit 1; }
             instance-identity
             bouncycastle-api
             jakarta-mail-api
@@ -661,18 +682,29 @@ Resources:
             EOF
 
             echo "Installing plugins..."
-            java -jar $PLUGIN_MANAGER_JAR \
-                --verbose \
-                --war /usr/share/java/jenkins.war \
-                --plugin-file /tmp/plugins.txt \
-                --plugin-download-directory $JENKINS_HOME/plugins > /var/log/jenkins/plugin_installation.log 2>&1
+            # Set permissions for plugin installation
+            chown jenkins:jenkins $PLUGIN_MANAGER_JAR
+            chown jenkins:jenkins $PLUGINS_FILE
 
-            PLUGIN_EXIT_CODE=$?
+            echo "Running plugin installation as jenkins user..."
+            sudo -u jenkins bash -c "
+                set -x
+                java -jar $PLUGIN_MANAGER_JAR \
+                    --verbose \
+                    --war /usr/share/java/jenkins.war \
+                    --plugin-file $PLUGINS_FILE \
+                    --plugin-download-directory $JENKINS_HOME/plugins 2>&1" | tee /var/log/jenkins/plugin_installation.log
+
+            PLUGIN_EXIT_CODE=${PIPESTATUS[0]}
 
             if [ $PLUGIN_EXIT_CODE -ne 0 ]; then
                 echo "Plugin installation failed with exit code: $PLUGIN_EXIT_CODE"
                 echo "Last 50 lines of plugin installation log:"
                 tail -n 50 /var/log/jenkins/plugin_installation.log
+                echo "Checking plugin directory contents:"
+                ls -la $JENKINS_HOME/plugins/
+                echo "Checking EFS mount status:"
+                df -h | grep jenkins
                 exit 1
             fi
 
@@ -682,11 +714,13 @@ Resources:
 
             if [ $PLUGIN_COUNT -eq 0 ]; then
                 echo "No plugins were installed. Installation failed."
+                echo "Full plugin installation log:"
                 cat /var/log/jenkins/plugin_installation.log
+                echo "EFS mount status:"
+                df -h | grep jenkins
+                mount | grep jenkins
                 exit 1
             fi
-
-            echo "Plugin installation completed successfully"
 
             # Configure Java options with proper memory settings
             cat << EOF > /etc/sysconfig/jenkins
