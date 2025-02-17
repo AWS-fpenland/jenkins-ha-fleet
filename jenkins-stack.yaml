@@ -686,8 +686,8 @@ Resources:
             chown jenkins:jenkins $PLUGINS_FILE
 
             echo "Running plugin installation as jenkins user..."
-            PLUGIN_INSTALL_CMD="sudo -u jenkins bash -c 'java -jar $PLUGIN_MANAGER_JAR --verbose --war /usr/share/java/jenkins.war --plugin-file $PLUGINS_FILE --plugin-download-directory $JENKINS_HOME/plugins'"
-            PLUGIN_INSTALL_OUTPUT=$($PLUGIN_INSTALL_CMD 2>&1)
+            INSTALL_CMD="java -jar $PLUGIN_MANAGER_JAR --verbose --war /usr/share/java/jenkins.war --plugin-file $PLUGINS_FILE --plugin-download-directory $JENKINS_HOME/plugins"
+            PLUGIN_INSTALL_OUTPUT=$(sudo -u jenkins bash -c "$INSTALL_CMD" 2>&1)
             PLUGIN_EXIT_CODE=$?
 
             echo "$PLUGIN_INSTALL_OUTPUT" | tee /var/log/jenkins/plugin_installation.log
