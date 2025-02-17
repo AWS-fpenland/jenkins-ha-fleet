@@ -681,21 +681,16 @@ Resources:
             prism-api
             EOF
 
-            echo "Installing plugins..."
             # Set permissions for plugin installation
             chown jenkins:jenkins $PLUGIN_MANAGER_JAR
             chown jenkins:jenkins $PLUGINS_FILE
 
             echo "Running plugin installation as jenkins user..."
-            sudo -u jenkins bash -c "
-                set -x
-                java -jar $PLUGIN_MANAGER_JAR \
-                    --verbose \
-                    --war /usr/share/java/jenkins.war \
-                    --plugin-file $PLUGINS_FILE \
-                    --plugin-download-directory $JENKINS_HOME/plugins 2>&1" | tee /var/log/jenkins/plugin_installation.log
+            PLUGIN_INSTALL_CMD="sudo -u jenkins bash -c 'java -jar $PLUGIN_MANAGER_JAR --verbose --war /usr/share/java/jenkins.war --plugin-file $PLUGINS_FILE --plugin-download-directory $JENKINS_HOME/plugins'"
+            PLUGIN_INSTALL_OUTPUT=$($PLUGIN_INSTALL_CMD 2>&1)
+            PLUGIN_EXIT_CODE=$?
 
-            PLUGIN_EXIT_CODE=${PIPESTATUS[0]}
+            echo "$PLUGIN_INSTALL_OUTPUT" | tee /var/log/jenkins/plugin_installation.log
 
             if [ $PLUGIN_EXIT_CODE -ne 0 ]; then
                 echo "Plugin installation failed with exit code: $PLUGIN_EXIT_CODE"
@@ -721,6 +716,8 @@ Resources:
                 mount | grep jenkins
                 exit 1
             fi
+
+            echo "Plugin installation completed successfully"
 
             # Configure Java options with proper memory settings
             cat << EOF > /etc/sysconfig/jenkins
