@@ -592,6 +592,11 @@ Resources:
             JENKINS_VERSION=$(yum info jenkins | grep Version | awk '{print $3}')
             PLUGIN_MANAGER_JAR="/usr/lib/jenkins/jenkins-plugin-manager.jar"
 
+            # Create necessary directories
+            mkdir -p /var/log/jenkins
+            chown jenkins:jenkins /var/log/jenkins
+            chmod 755 /var/log/jenkins
+
             echo "Downloading Plugin Manager..."
             if ! wget -O $PLUGIN_MANAGER_JAR https://github.com/jenkinsci/plugin-installation-manager-tool/releases/download/2.13.2/jenkins-plugin-manager-2.13.2.jar; then
                 echo "Failed to download Plugin Manager"
