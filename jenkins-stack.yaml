@@ -540,10 +540,14 @@ Resources:
             mkdir -p $JENKINS_HOME
             
             # Try mounting EFS with retries
-            for i in {1..3}; do
+            for i in {1..5}; do
               if mount -t efs ${EFSFileSystem}:/ $JENKINS_HOME; then
                 echo "EFS mounted successfully"
                 break
+              fi
+              if [ $i -eq 5 ]; then
+                echo "Failed to mount EFS after 5 attempts"
+                exit 1
               fi
               echo "Attempt $i to mount EFS failed, retrying in 10 seconds..."
               sleep 10
@@ -551,7 +555,7 @@ Resources:
 
             # Verify mount
             if ! mountpoint -q $JENKINS_HOME; then
-              echo "Failed to mount EFS after 3 attempts"
+              echo "EFS mount verification failed"
               exit 1
             fi
 
@@ -562,8 +566,6 @@ Resources:
             # Set initial permissions
             chown -R jenkins:jenkins $JENKINS_HOME
             chmod -R 755 $JENKINS_HOME
-            find $JENKINS_HOME -type d -exec chmod 755 {} \;
-            find $JENKINS_HOME -type f -exec chmod 644 {} \;
             echo "${EFSFileSystem}:/ $JENKINS_HOME efs _netdev,tls,noatime 0 0" >> /etc/fstab
 
             # System optimizations
@@ -577,177 +579,94 @@ Resources:
             # Install Jenkins
             wget -O /etc/yum.repos.d/jenkins.repo https://pkg.jenkins.io/redhat-stable/jenkins.repo
             rpm --import https://pkg.jenkins.io/redhat-stable/jenkins.io-2023.key
+            
             # Install Jenkins with retries
             for i in {1..3}; do
               if yum install -y jenkins; then
                 break
               fi
+              if [ $i -eq 3 ]; then
+                echo "Failed to install Jenkins after 3 attempts"
+                exit 1
+              fi
               echo "Attempt $i to install Jenkins failed. Retrying..."
               sleep 10
             done
 
-            # Verify EFS mount is ready and has correct permissions
-            echo "Verifying EFS mount..."
-            if ! mountpoint -q $JENKINS_HOME; then
-                echo "EFS mount point $JENKINS_HOME is not mounted"
-                exit 1
-            fi
-
-            # Ensure proper permissions before plugin installation
-            echo "Setting up permissions for Jenkins home..."
-            chown -R jenkins:jenkins $JENKINS_HOME
-            chmod -R 755 $JENKINS_HOME
-            find $JENKINS_HOME -type d -exec chmod 755 {} \;
-            find $JENKINS_HOME -type f -exec chmod 644 {} \;
-
-            # Create plugin directories on EFS
-            echo "Creating plugin directories..."
-            mkdir -p $JENKINS_HOME/plugins
-            if [ $? -ne 0 ]; then
-                echo "Failed to create plugins directory on EFS mount"
-                exit 1
-            fi
-
+            # Create necessary directories
+            mkdir -p $JENKINS_HOME/{plugins,init.groovy.d,logs}
             mkdir -p /var/log/jenkins
-            if [ $? -ne 0 ]; then
-                echo "Failed to create log directory"
-                exit 1
-            fi
+            mkdir -p /var/cache/jenkins
+            
+            # Set permissions
+            chown -R jenkins:jenkins $JENKINS_HOME /var/log/jenkins /var/cache/jenkins
+            chmod 755 $JENKINS_HOME /var/log/jenkins /var/cache/jenkins
 
-            chown jenkins:jenkins /var/log/jenkins
-            chmod 755 /var/log/jenkins
-
-            echo "Downloading Plugin Manager..."
+            # Download Plugin Manager
             PLUGIN_MANAGER_JAR="$JENKINS_HOME/plugin-manager.jar"
-            if ! wget -O $PLUGIN_MANAGER_JAR https://github.com/jenkinsci/plugin-installation-manager-tool/releases/download/2.13.2/jenkins-plugin-manager-2.13.2.jar; then
-                echo "Failed to download Plugin Manager to EFS"
-                exit 1
-            fi
+            wget -O $PLUGIN_MANAGER_JAR https://github.com/jenkinsci/plugin-installation-manager-tool/releases/download/2.13.2/jenkins-plugin-manager-2.13.2.jar
+            chown jenkins:jenkins $PLUGIN_MANAGER_JAR
 
-            echo "Creating plugins list..."
+            # Create plugins list with required plugins
             PLUGINS_FILE="$JENKINS_HOME/plugins.txt"
-            cat << EOF > $PLUGINS_FILE || { echo "Failed to create plugins.txt on EFS"; exit 1; }
+            cat << EOF > $PLUGINS_FILE
             instance-identity
-            bouncycastle-api
-            jakarta-mail-api
-            javax-activation-api
-            javax-mail-api
-            sshd
-            ssh-slaves
+            configuration-as-code
+            ec2-fleet
             aws-credentials
-            aws-java-sdk
-            aws-java-sdk2-ec2
-            aws-java-sdk-ec2
-            aws-java-sdk-minimal
-            aws-java-sdk-codebuild
-            aws-java-sdk-api-gateway
-            aws-java-sdk-cloudwatch
-            aws-java-sdk-cloudformation
-            aws-java-sdk-efs
-            aws-java-sdk-elasticloadbalancingv2
-            aws-java-sdk-lambda
-            aws-java-sdk-kinesis
-            aws-java-sdk-secretsmanager
-            aws-java-sdk-codedeploy
-            aws-java-sdk-ecr
-            aws-java-sdk-ecs
-            aws-java-sdk-organizations
-            aws-java-sdk-elasticbeanstalk
-            aws-java-sdk-sqs
-            aws-java-sdk-ssm
-            aws-java-sdk-logs
-            aws-java-sdk-cloudfront
-            aws-java-sdk-sns
-            aws-java-sdk-autoscaling
-            aws-java-sdk-iam
-            git-client
-            scm-api
-            git
-            github
-            github-branch-source
-            pipeline-github-lib
-            credentials-binding
             credentials
+            bouncycastle-api
+            apache-httpcomponents-client-4-api
+            cloudbees-folder
+            ssh-credentials
+            trilead-api
+            credentials-binding
+            scm-api
+            structs
+            workflow-step-api
+            workflow-api
+            junit
+            matrix-project
+            script-security
+            command-launcher
+            jackson2-api
+            snakeyaml-api
+            caffeine-api
+            jaxb
+            workflow-support
+            durable-task
+            workflow-durable-task-step
+            plugin-util-api
+            font-awesome-api
+            bootstrap5-api
+            jquery3-api
+            echarts-api
+            display-url-api
+            mailer
+            workflow-job
+            checks-api
+            workflow-basic-steps
+            plain-credentials
+            apache-httpcomponents-client-5-api
             matrix-auth
             authorize-project
             workflow-aggregator
-            pipeline-model-extensions
-            cloudbees-folder
-            configuration-as-code
-            ec2-fleet
-            json-api
-            commons-text-api
-            prism-api
+            git-client
+            git
+            github
+            github-branch-source
             EOF
 
-            # Set permissions for plugin installation
-            chown jenkins:jenkins $PLUGIN_MANAGER_JAR
             chown jenkins:jenkins $PLUGINS_FILE
 
-            echo "Running plugin installation as jenkins user..."
-            INSTALL_CMD="java -jar $PLUGIN_MANAGER_JAR --verbose --war /usr/share/java/jenkins.war --plugin-file $PLUGINS_FILE --plugin-download-directory $JENKINS_HOME/plugins"
-            PLUGIN_INSTALL_OUTPUT=$(sudo -u jenkins bash -c "$INSTALL_CMD" 2>&1)
-            PLUGIN_EXIT_CODE=$?
+            # Install plugins as jenkins user
+            echo "Installing Jenkins plugins..."
+            sudo -u jenkins bash -c "java -jar $PLUGIN_MANAGER_JAR --verbose \
+              --war /usr/share/java/jenkins.war \
+              --plugin-file $PLUGINS_FILE \
+              --plugin-download-directory $JENKINS_HOME/plugins" || exit 1
 
-            echo "$PLUGIN_INSTALL_OUTPUT" | tee /var/log/jenkins/plugin_installation.log
-
-            if [ $PLUGIN_EXIT_CODE -ne 0 ]; then
-                echo "Plugin installation failed with exit code: $PLUGIN_EXIT_CODE"
-                echo "Last 50 lines of plugin installation log:"
-                tail -n 50 /var/log/jenkins/plugin_installation.log
-                echo "Checking plugin directory contents:"
-                ls -la $JENKINS_HOME/plugins/
-                echo "Checking EFS mount status:"
-                df -h | grep jenkins
-                exit 1
-            fi
-
-            echo "Verifying plugin installation..."
-            PLUGIN_COUNT=$(ls -1 $JENKINS_HOME/plugins/*.jpi 2>/dev/null | wc -l)
-            echo "Number of plugins installed: $PLUGIN_COUNT"
-
-            if [ $PLUGIN_COUNT -eq 0 ]; then
-                echo "No plugins were installed. Installation failed."
-                echo "Full plugin installation log:"
-                cat /var/log/jenkins/plugin_installation.log
-                echo "EFS mount status:"
-                df -h | grep jenkins
-                mount | grep jenkins
-                exit 1
-            fi
-
-            echo "Plugin installation completed successfully"
-
-            # Configure Java options with proper memory settings
-            cat << EOF > /etc/sysconfig/jenkins
-            JENKINS_JAVA_OPTIONS="-Xmx2048m -Djava.awt.headless=true -Djenkins.install.runSetupWizard=false -Dhudson.model.DirectoryBrowserSupport.CSP="
-            JENKINS_PORT="8080"
-            EOF
-
-            # Create init groovy script for security setup
-            mkdir -p $JENKINS_HOME/init.groovy.d
-            chown -R jenkins:jenkins $JENKINS_HOME/init.groovy.d
-            chmod 755 $JENKINS_HOME/init.groovy.d
-            chmod 644 $JENKINS_HOME/init.groovy.d/*.groovy
-            cat << 'EOF' > $JENKINS_HOME/init.groovy.d/basic-security.groovy
-            import jenkins.model.*
-            import hudson.security.*
-            import jenkins.install.*
-            import hudson.util.Secret
-            import com.cloudbees.plugins.credentials.*
-            import com.cloudbees.plugins.credentials.domains.*
-            import org.jenkinsci.plugins.plaincredentials.impl.*
-
-            def instance = Jenkins.getInstance()
-            
-            // Ensure Jenkins is in initial setup mode
-            instance.setInstallState(InstallState.INITIAL_SETUP_COMPLETED)
-            
-            // Wait for initialization
-            Thread.sleep(10000)
-            EOF
-
-            # Fetch admin credentials from Secrets Manager with retries
+            # Fetch admin credentials from Secrets Manager
             for i in {1..3}; do
               if ADMIN_CREDS=$(aws secretsmanager get-secret-value \
                 --secret-id ${JenkinsAdminSecret} \
@@ -757,63 +676,33 @@ Resources:
                 ADMIN_PASSWORD=$(echo $ADMIN_CREDS | jq -r '.password')
                 break
               fi
+              if [ $i -eq 3 ]; then
+                echo "Failed to fetch admin credentials after 3 attempts"
+                exit 1
+              fi
               echo "Attempt $i to fetch admin credentials failed. Retrying..."
               sleep 10
             done
 
-            if [ -z "$ADMIN_USER" ] || [ -z "$ADMIN_PASSWORD" ]; then
-              echo "Failed to fetch admin credentials"
-              exit 1
-            fi
-
-            # Create user creation script with proper sequencing
-            cat << EOF > $JENKINS_HOME/init.groovy.d/create-user.groovy
-            import jenkins.model.*
-            import hudson.security.*
-            import hudson.security.csrf.DefaultCrumbIssuer
-
-            def instance = Jenkins.getInstance()
-            
-            // Wait for Jenkins to be available
-            Thread.sleep(15000)
-            
-            // Create security realm
-            def hudsonRealm = new HudsonPrivateSecurityRealm(false)
-            instance.setSecurityRealm(hudsonRealm)
-            
-            // Create admin user
-            def adminUsername = "$ADMIN_USER"
-            def adminPassword = "$ADMIN_PASSWORD"
-            
-            // Delete the user if it exists already
-            def user = hudsonRealm.getAllUsers().find { it.id == adminUsername }
-            if (user) {
-                hudsonRealm.deleteUser(adminUsername)
-            }
-            
-            // Create the admin user
-            hudsonRealm.createAccount(adminUsername, adminPassword)
-            
-            // Set up authorization strategy
-            def strategy = new GlobalMatrixAuthorizationStrategy()
-            strategy.add(Jenkins.ADMINISTER, adminUsername)
-            instance.setAuthorizationStrategy(strategy)
-            
-            // Enable CSRF protection
-            instance.setCrumbIssuer(new DefaultCrumbIssuer(true))
-            
-            instance.save()
-            EOF
-
-            # Configure Jenkins CasC
             # Get EC2 Fleet ID
-            EC2_FLEET_ID=$(aws cloudformation describe-stack-resources \
-              --stack-name ${AWS::StackName} \
-              --logical-resource-id EC2FleetConfiguration \
-              --region ${AWS::Region} \
-              --query 'StackResources[0].PhysicalResourceId' \
-              --output text)
+            for i in {1..3}; do
+              if EC2_FLEET_ID=$(aws cloudformation describe-stack-resources \
+                --stack-name ${AWS::StackName} \
+                --logical-resource-id EC2FleetConfiguration \
+                --region ${AWS::Region} \
+                --query 'StackResources[0].PhysicalResourceId' \
+                --output text); then
+                break
+              fi
+              if [ $i -eq 3 ]; then
+                echo "Failed to get EC2 Fleet ID after 3 attempts"
+                exit 1
+              fi
+              echo "Attempt $i to get EC2 Fleet ID failed. Retrying..."
+              sleep 10
+            done
 
+            # Create Jenkins Configuration as Code file
             cat << EOF > $JENKINS_HOME/jenkins.yaml
             jenkins:
               securityRealm:
@@ -827,17 +716,21 @@ Resources:
               systemMessage: "Jenkins HA Setup"
               numExecutors: 0
               mode: EXCLUSIVE
-              scmCheckoutRetryCount: 2
-              quietPeriod: 5
-              remotingSecurity:
-                enabled: true
               clouds:
                 - ec2Fleet:
                     name: "EC2 Fleet"
                     cloudName: "AWS"
                     region: "${AWS::Region}"
+                    fleet:
+                      - fleetId: "$EC2_FLEET_ID"
+                        fsRoot: "/home/jenkins"
+                        labels: "ec2-fleet"
+                        instanceCapStr: "10"
+                        minimumNumberOfSpareInstances: 1
+                        privateIpUsed: true
+                        scaleExecutorsByWeight: true
                     computerConnector:
-                      hudson.slaves.JNLPLauncher:
+                      jnlp:
                         workDirSettings:
                           disabled: false
                           failIfWorkDirIsMissing: false
@@ -845,32 +738,15 @@ Resources:
                     idleMinutes: 10
                     minSize: 0
                     maxSize: 10
-                    fleetConfig:
-                      fleetId: "${EC2FleetConfiguration}"
-                      fsRoot: "/home/jenkins"
-                      labels: "ec2-fleet"
-                      instanceCapStr: "10"
-                      minimumNumberOfSpareInstances: 1
-                      scaleExecutorsByWeight: true
             security:
               globalJobDslSecurityConfiguration:
-                useScriptSecurity: false
-              securityManager:
-                enabled: true
+                useScriptSecurity: true
               csrf:
                 defaultCrumbIssuer:
                   enabled: true
-            tool:
-              git:
-                installations:
-                  - name: "Default"
-                    home: "git"
             EOF
 
-            # Set permissions
-            chown -R jenkins:jenkins $JENKINS_HOME
-            chmod 700 $JENKINS_HOME
-            chmod 600 $JENKINS_HOME/jenkins.yaml
+            chown jenkins:jenkins $JENKINS_HOME/jenkins.yaml
 
             # Configure systemd service
             cat << 'EOF' > /usr/lib/systemd/system/jenkins.service
@@ -887,7 +763,8 @@ Resources:
             ExecStart=/usr/bin/java -Djava.awt.headless=true -jar /usr/share/java/jenkins.war --webroot=/var/cache/jenkins/war --httpPort=8080
             Restart=on-failure
             RestartSec=10
-            SuccessExitStatus=143
+            LimitNOFILE=8192
+            TimeoutStartSec=300
 
             [Install]
             WantedBy=multi-user.target
@@ -896,66 +773,47 @@ Resources:
             systemctl daemon-reload
 
             # Configure Jenkins options
-            cat << 'EOF' > /etc/sysconfig/jenkins
+            cat << EOF > /etc/sysconfig/jenkins
             JENKINS_HOME=/var/lib/jenkins
-            JENKINS_JAVA_OPTIONS="-Djava.awt.headless=true -Djenkins.install.runSetupWizard=false -Dorg.apache.commons.jelly.tags.fmt.timeZone=America/New_York -Dhudson.model.DirectoryBrowserSupport.CSP="
+            JENKINS_JAVA_OPTIONS="-Djava.awt.headless=true -Djenkins.install.runSetupWizard=false -Dcasc.jenkins.config=$JENKINS_HOME/jenkins.yaml -Dorg.apache.commons.jelly.tags.fmt.timeZone=America/New_York"
             JENKINS_PORT="8080"
             JENKINS_USER="jenkins"
             JENKINS_JAVA_CMD="/usr/lib/jvm/java-17-amazon-corretto/bin/java"
             EOF
 
-            # Set Java environment variables
-            cat << 'EOF' > /etc/profile.d/jenkins-java.sh
-            export JAVA_HOME=/usr/lib/jvm/java-17-amazon-corretto
-            export PATH=$JAVA_HOME/bin:$PATH
-            EOF
-
-            # Set correct permissions on Jenkins home
-            chmod -R 755 $JENKINS_HOME
-            find $JENKINS_HOME -type f -exec chmod 644 {} \;
-            find $JENKINS_HOME -type d -exec chmod 755 {} \;
-
-            # Create Jenkins log directory with correct permissions
-            mkdir -p /var/log/jenkins
-            chown jenkins:jenkins /var/log/jenkins
-            chmod 755 /var/log/jenkins
-
-            # Create and set permissions for Jenkins cache directory
-            mkdir -p /var/cache/jenkins
-            chown jenkins:jenkins /var/cache/jenkins
-            chmod 755 /var/cache/jenkins
-            
-            # Start Jenkins with error checking
+            # Start Jenkins
             echo "Starting Jenkins service..."
-            if ! systemctl start jenkins; then
-                echo "Jenkins failed to start, checking logs..."
-                journalctl -u jenkins --no-pager -n 50
-                cat /var/log/jenkins/jenkins.log || true
-                exit 1
-            fi
+            systemctl enable jenkins
+            systemctl start jenkins
 
             # Wait for Jenkins to initialize
             echo "Waiting for Jenkins to initialize..."
             for i in {1..30}; do
-                if curl -s -f http://localhost:8080/login > /dev/null; then
-                    echo "Jenkins is up and running"
-                    break
-                fi
-                if [ $i -eq 30 ]; then
-                    echo "Jenkins failed to start after 5 minutes"
-                    journalctl -u jenkins --no-pager -n 50
-                    cat /var/log/jenkins/jenkins.log || true
-                    exit 1
-                fi
-                echo "Still waiting for Jenkins... (attempt $i/30)"
-                sleep 10
+              if curl -s -f http://localhost:8080/login > /dev/null; then
+                echo "Jenkins is up and running"
+                break
+              fi
+              if [ $i -eq 30 ]; then
+                echo "Jenkins failed to start after 5 minutes"
+                journalctl -u jenkins --no-pager -n 50
+                exit 1
+              fi
+              echo "Still waiting for Jenkins... (attempt $i/30)"
+              sleep 10
             done
 
-            # Additional wait to ensure Jenkins is fully initialized
+            # Additional wait to ensure plugins are initialized
             sleep 30
 
-            # Wait for Jenkins to be available
-            timeout 300 bash -c 'while [[ "$(curl -s -o /dev/null -w ''%{http_code}'' localhost:8080)" != "200" ]]; do sleep 5; done' || false
+            # Verify CasC configuration
+            if [ -f $JENKINS_HOME/jenkins.yaml ]; then
+              echo "Verifying Configuration as Code..."
+              CASC_JENKINS_CONFIG=$JENKINS_HOME/jenkins.yaml java -jar /usr/share/java/jenkins.war -Djenkins.install.runSetupWizard=false check-configuration-as-code
+              if [ $? -ne 0 ]; then
+                echo "Configuration as Code validation failed"
+                exit 1
+              fi
+            fi
 
             # Signal completion to CloudFormation
             /opt/aws/bin/cfn-signal -e $? \
