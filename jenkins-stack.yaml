@@ -351,6 +351,15 @@ Resources:
               - Effect: Allow
                 Action:
                   - ec2:DescribeInstances
+                  - ec2:DescribeInstanceTypes
+                  - ec2:DescribeSpotFleetRequests
+                  - ec2:ModifySpotFleetRequest
+                  - ec2:DescribeFleets
+                  - ec2:DescribeFleetInstances
+                  - ec2:ModifyFleet
+                  - ec2:DescribeAutoScalingGroups
+                  - ec2:UpdateAutoScalingGroup
+                  - ec2:DescribeSubnets
                   - ec2:DescribeSpotInstanceRequests
                   - ec2:RequestSpotInstances
                   - ec2:TerminateInstances
