@@ -553,10 +553,35 @@ Resources:
             groupadd -r jenkins
             useradd -r -g jenkins -d $JENKINS_HOME -s /sbin/nologin jenkins
 
-            # Install Jenkins
+            # Install Jenkins with proper error handling
             wget -O /etc/yum.repos.d/jenkins.repo https://pkg.jenkins.io/redhat-stable/jenkins.repo
             rpm --import https://pkg.jenkins.io/redhat-stable/jenkins.io-2023.key
-            yum install -y jenkins
+            
+            # Clean DNF cache before attempting installation
+            yum clean all
+            rm -rf /var/cache/dnf
+
+            # Try to install Jenkins with retries
+            for i in {1..3}; do
+              echo "Attempt $i to install Jenkins..."
+              yum clean all
+              if yum install -y jenkins; then
+                echo "Jenkins installation successful"
+                break
+              else
+                echo "Jenkins installation attempt $i failed"
+                rm -rf /var/cache/dnf
+                sleep 10
+                if [ $i -eq 3 ]; then
+                  echo "Failed to install Jenkins after 3 attempts"
+                  /opt/aws/bin/cfn-signal -e 1 \
+                    --stack ${AWS::StackName} \
+                    --resource JenkinsASG \
+                    --region ${AWS::Region}
+                  exit 1
+                fi
+              fi
+            done
 
             # Get admin credentials from Secrets Manager
             ADMIN_CREDS=$(aws secretsmanager get-secret-value \
