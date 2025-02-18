@@ -530,7 +530,7 @@ Resources:
 
             # Update system and install dependencies
             yum update -y
-            yum install -y jq amazon-efs-utils wget
+            yum install -y amazon-efs-utils
 
             # Install Java 17
             yum install -y java-17-amazon-corretto-headless
