@@ -353,6 +353,7 @@ Resources:
                   - ec2:DescribeInstances
                   - ec2:DescribeInstanceTypes
                   - ec2:DescribeSpotFleetRequests
+                  - ec2:DescribeSpotFleetInstances
                   - ec2:ModifySpotFleetRequest
                   - ec2:DescribeFleets
                   - ec2:DescribeFleetInstances
