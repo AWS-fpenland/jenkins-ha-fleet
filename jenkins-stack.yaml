@@ -271,11 +271,11 @@ Resources:
         - IpProtocol: tcp
           FromPort: 80
           ToPort: 80
-          CidrIp: 0.0.0.0/0
+          CidrIp: 69.126.73.111/32
         - IpProtocol: tcp
           FromPort: 443
           ToPort: 443
-          CidrIp: 0.0.0.0/0
+          CidrIp: 69.126.73.111/32
 
   JenkinsControllerSecurityGroup:
     Type: AWS::EC2::SecurityGroup
