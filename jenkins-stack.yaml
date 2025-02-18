@@ -638,7 +638,6 @@ Resources:
             PLUGINS_FILE="$JENKINS_HOME/plugins.txt"
             cat << EOF > $PLUGINS_FILE
             instance-identity
-            configuration-as-code
             ec2-fleet
             aws-credentials
             credentials
