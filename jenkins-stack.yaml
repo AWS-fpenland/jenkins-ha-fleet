@@ -350,6 +350,7 @@ Resources:
             Statement:
               - Effect: Allow
                 Action:
+                  - autoscaling:DescribeAutoScalingGroups
                   - ec2:DescribeInstances
                   - ec2:DescribeInstanceTypes
                   - ec2:DescribeSpotFleetRequests
