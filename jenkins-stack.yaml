@@ -7,9 +7,10 @@ Parameters:
     Default: jenkins-poc
     Description: Environment name used for tagging
 
-  KeyName:
-    Type: AWS::EC2::KeyPair::KeyName
-    Description: Name of an existing EC2 KeyPair for SSH access
+#Removing KeyName in favor of autocreating it
+  #KeyName:
+    #Type: AWS::EC2::KeyPair::KeyName
+    #Description: Name of an existing EC2 KeyPair for SSH access
 
   JenkinsVersion:
     Type: String
@@ -21,6 +22,24 @@ Parameters:
     Default: '/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2'
 
 Resources:
+  ################
+  # Key Pair     #
+  ################
+  JenkinsKeyPair:
+    Type: AWS::EC2::KeyPair
+    Properties:
+      KeyName: !Sub ${EnvironmentName}-jenkins-keypair
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-jenkins-keypair
+
+  JenkinsKeySecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub ${EnvironmentName}/jenkins/ssh-key
+      Description: SSH private key for Jenkins EC2 instances
+      SecretString: !GetAtt JenkinsKeyPair.KeyFingerprint
+
   ###################
   # VPC and Network #
   ###################
@@ -380,7 +399,9 @@ Resources:
               - Effect: Allow
                 Action:
                   - secretsmanager:GetSecretValue
-                Resource: !Ref JenkinsAdminSecret
+                Resource: 
+                - !Ref JenkinsAdminSecret
+                - !Ref JenkinsKeySecret
               - Effect: Allow
                 Action:
                   - ssm:PutParameter
@@ -416,6 +437,10 @@ Resources:
                 Action:
                   - ec2:DescribeInstances
                 Resource: '*'
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource: !Ref JenkinsKeySecret
 
   JenkinsWorkerInstanceProfile:
     Type: AWS::IAM::InstanceProfile
@@ -529,7 +554,7 @@ Resources:
           Name: !Ref JenkinsControllerInstanceProfile
         SecurityGroupIds:
           - !Ref JenkinsControllerSecurityGroup
-        KeyName: !Ref KeyName
+        KeyName: !Ref JenkinsKeyPair
         BlockDeviceMappings:
           - DeviceName: /dev/xvda
             Ebs:
@@ -665,7 +690,7 @@ Resources:
           Name: !Ref JenkinsWorkerInstanceProfile
         SecurityGroupIds:
           - !Ref JenkinsWorkerSecurityGroup
-        KeyName: !Ref KeyName
+        KeyName: !Ref JenkinsKeyPair
         UserData:
           Fn::Base64: !Sub |
             #!/bin/bash -xe
@@ -765,6 +790,10 @@ Resources:
       SpotOptions:
         AllocationStrategy: capacity-optimized
         InstanceInterruptionBehavior: terminate
+        MaintenanceStrategies:
+          CapacityRebalance:
+            ReplacementStrategy: launch-before-terminate
+            TerminationDelay: 120  # Adding 120 second delay before termination
       TargetCapacitySpecification:
         DefaultTargetCapacityType: spot
         OnDemandTargetCapacity: 0
@@ -784,3 +813,15 @@ Outputs:
   EC2FleetId:
     Description: EC2 Fleet ID
     Value: !Ref EC2FleetConfiguration
+
+  JenkinsKeyPairName:
+    Description: Name of the created EC2 Key Pair
+    Value: !Ref JenkinsKeyPair
+
+  JenkinsPrivateKeySecret:
+    Description: Secrets Manager ARN containing the private key
+    Value: !Ref JenkinsKeySecret
+
+  JenkinsDefaultAdminPassword:
+    Description: Initial Jenkins admin password in AWS Systems Manager Parameter Store
+    Value: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${EnvironmentName}/jenkins/*
