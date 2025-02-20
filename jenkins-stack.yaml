@@ -790,10 +790,6 @@ Resources:
       SpotOptions:
         AllocationStrategy: capacity-optimized
         InstanceInterruptionBehavior: terminate
-        MaintenanceStrategies:
-          CapacityRebalance:
-            ReplacementStrategy: launch-before-terminate
-            TerminationDelay: 120  # Adding 120 second delay before termination
       TargetCapacitySpecification:
         DefaultTargetCapacityType: spot
         OnDemandTargetCapacity: 0
