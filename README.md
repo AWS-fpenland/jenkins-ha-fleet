@@ -101,9 +101,24 @@ http://jenkins-poc-jenkins-alb-2014278711.us-east-1.elb.amazonaws.com/
 
 aws autoscaling set-desired-capacity \
     --auto-scaling-group-name jenkins-poc-jenkins-controllers \
-    --desired-capacity 0 \
+    --desired-capacity 2 \
     --region us-east-1 \
     --profile netcore
 
 
 java -jar jenkins-plugin-manager-*.jar --war /your/path/to/jenkins.war --plugin-download-directory /your/path/to/plugins/ --plugin-file /your/path/to/plugins.txt --plugins delivery-pipeline-plugin:1.3.2 deployit-plugin
+
+
+aws ssm get-parameter \
+  --name "/jenkins-poc/jenkins/initial-admin-password" \
+  --with-decryption \
+  --query "Parameter.Value" \
+  --output text \
+  --profile netcore
+
+  61ab90534547451aadd7d9370a90a89b
+
+  aws ssm get-parameter --name "/jenkins-poc/jenkins/initial-admin-password" --with-decryption --query "Parameter.Value" --output text --profile netcore
+
+
+i-015a4a357388ff082 - Working Jenkins Instance

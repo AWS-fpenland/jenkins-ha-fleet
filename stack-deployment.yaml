@@ -1,7 +1,6 @@
 template-file-path: ./jenkins-stack.yaml
 parameters:
     EnvironmentName: jenkins-poc
-    KeyName: jenkins-demo-us-east-1
     JenkinsVersion: "2.492.1"
     LatestAmiId: '/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64'
 tags:
