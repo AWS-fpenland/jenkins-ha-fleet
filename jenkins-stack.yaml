@@ -776,7 +776,7 @@ Resources:
         AllocationStrategy: capacity-optimized
         InstanceInterruptionBehavior: terminate
       TargetCapacitySpecification:
-        DefaultTargetCapacityType: OnDemand
+        DefaultTargetCapacityType: on-demand
         OnDemandTargetCapacity: 0
         SpotTargetCapacity: 0
         TotalTargetCapacity: 0
