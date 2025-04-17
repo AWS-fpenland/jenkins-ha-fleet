@@ -7,11 +7,6 @@ Parameters:
     Default: jenkins-poc
     Description: Environment name used for tagging
 
-#Removing KeyName in favor of autocreating it
-  #KeyName:
-    #Type: AWS::EC2::KeyPair::KeyName
-    #Description: Name of an existing EC2 KeyPair for SSH access
-
   JenkinsVersion:
     Type: String
     Default: "2.426.1"
@@ -33,12 +28,12 @@ Resources:
         - Key: Name
           Value: !Sub ${EnvironmentName}-jenkins-keypair
 
-  JenkinsKeySecret:
-    Type: AWS::SecretsManager::Secret
-    Properties:
-      Name: !Sub ${EnvironmentName}/jenkins/ssh-key
-      Description: SSH private key for Jenkins EC2 instances
-      SecretString: !GetAtt JenkinsKeyPair.KeyFingerprint
+  # JenkinsKeySecret:
+  #   Type: AWS::SecretsManager::Secret
+  #   Properties:
+  #     Name: !Sub ${EnvironmentName}/jenkins/ssh-key
+  #     Description: SSH private key for Jenkins EC2 instances
+  #     SecretString: !GetAtt JenkinsKeyPair.KeyFingerprint
 
   ###################
   # VPC and Network #
@@ -398,12 +393,6 @@ Resources:
                 Resource: '*'
               - Effect: Allow
                 Action:
-                  - secretsmanager:GetSecretValue
-                Resource: 
-                - !Ref JenkinsAdminSecret
-                - !Ref JenkinsKeySecret
-              - Effect: Allow
-                Action:
                   - ssm:PutParameter
                 Resource: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${EnvironmentName}/jenkins/*
 
@@ -437,10 +426,6 @@ Resources:
                 Action:
                   - ec2:DescribeInstances
                 Resource: '*'
-              - Effect: Allow
-                Action:
-                  - secretsmanager:GetSecretValue
-                Resource: !Ref JenkinsKeySecret
 
   JenkinsWorkerInstanceProfile:
     Type: AWS::IAM::InstanceProfile
@@ -532,16 +517,16 @@ Resources:
   #########################
   # Jenkins Controllers   #
   #########################
-  JenkinsAdminSecret:
-    Type: AWS::SecretsManager::Secret
-    Properties:
-      Name: !Sub ${EnvironmentName}-jenkins-admin-credentials
-      Description: Jenkins admin user credentials
-      GenerateSecretString:
-        SecretStringTemplate: '{"username": "admin"}'
-        GenerateStringKey: "password"
-        PasswordLength: 16
-        ExcludeCharacters: '"@/\\'
+  # JenkinsAdminSecret:
+  #   Type: AWS::SecretsManager::Secret
+  #   Properties:
+  #     Name: !Sub ${EnvironmentName}-jenkins-admin-credentials
+  #     Description: Jenkins admin user credentials
+  #     GenerateSecretString:
+  #       SecretStringTemplate: '{"username": "admin"}'
+  #       GenerateStringKey: "password"
+  #       PasswordLength: 16
+  #       ExcludeCharacters: '"@/\\'
 
   JenkinsLaunchTemplate:
     Type: AWS::EC2::LaunchTemplate
@@ -791,11 +776,11 @@ Resources:
         AllocationStrategy: capacity-optimized
         InstanceInterruptionBehavior: terminate
       TargetCapacitySpecification:
-        DefaultTargetCapacityType: spot
+        DefaultTargetCapacityType: OnDemand
         OnDemandTargetCapacity: 0
         SpotTargetCapacity: 0
         TotalTargetCapacity: 0
-      Type: maintain
+      Type: instant
 
 Outputs:
   JenkinsURL:
@@ -813,10 +798,6 @@ Outputs:
   JenkinsKeyPairName:
     Description: Name of the created EC2 Key Pair
     Value: !Ref JenkinsKeyPair
-
-  JenkinsPrivateKeySecret:
-    Description: Secrets Manager ARN containing the private key
-    Value: !Ref JenkinsKeySecret
 
   JenkinsDefaultAdminPassword:
     Description: Initial Jenkins admin password in AWS Systems Manager Parameter Store
