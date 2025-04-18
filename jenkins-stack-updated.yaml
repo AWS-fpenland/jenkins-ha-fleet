@@ -644,6 +644,10 @@ Resources:
 
   JenkinsASG:
     Type: AWS::AutoScaling::AutoScalingGroup
+    CreationPolicy:
+      ResourceSignal:
+        Timeout: PT15M
+        Count: 1
     Properties:
       AutoScalingGroupName: !Sub ${EnvironmentName}-jenkins-controllers
       DesiredCapacity: 1
@@ -658,6 +662,8 @@ Resources:
       LaunchTemplate:
         LaunchTemplateId: !Ref JenkinsLaunchTemplate
         Version: !GetAtt JenkinsLaunchTemplate.LatestVersionNumber
+      HealthCheckType: ELB
+      HealthCheckGracePeriod: 600
       Tags:
         - Key: Name
           Value: !Sub ${EnvironmentName}-jenkins-controller
@@ -700,6 +706,50 @@ Resources:
             # Configure worker node
             mkdir -p /home/jenkins/workspace
             chown -R jenkins:jenkins /home/jenkins
+
+  JenkinsWorkerASG:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      AutoScalingGroupName: !Sub ${EnvironmentName}-jenkins-workers
+      DesiredCapacity: 0
+      MinSize: 0
+      MaxSize: 10
+      VPCZoneIdentifier:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+        - !Ref PrivateSubnet3
+      MixedInstancesPolicy:
+        LaunchTemplate:
+          LaunchTemplateSpecification:
+            LaunchTemplateId: !Ref WorkerLaunchTemplate
+            Version: !GetAtt WorkerLaunchTemplate.LatestVersionNumber
+          Overrides:
+            # m6a instances
+            - InstanceType: m6a.large
+            - InstanceType: m6a.xlarge
+            # c6a instances
+            - InstanceType: c6a.large
+            - InstanceType: c6a.xlarge
+            # r6a instances
+            - InstanceType: r6a.large
+            - InstanceType: r6a.xlarge
+        InstancesDistribution:
+          OnDemandAllocationStrategy: prioritized
+          OnDemandBaseCapacity: 0
+          OnDemandPercentageAboveBaseCapacity: 0
+          SpotAllocationStrategy: capacity-optimized
+          SpotInstancePools: 0
+      HealthCheckType: EC2
+      HealthCheckGracePeriod: 300
+      NewInstancesProtectedFromScaleIn: false
+      Cooldown: 300
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-jenkins-worker
+          PropagateAtLaunch: true
+        - Key: JenkinsManaged
+          Value: "true"
+          PropagateAtLaunch: true
 
   EC2FleetConfiguration:
     Type: AWS::EC2::EC2Fleet
@@ -782,50 +832,6 @@ Resources:
         TotalTargetCapacity: 0
       Type: maintain
 
-  JenkinsWorkerASG:
-    Type: AWS::AutoScaling::AutoScalingGroup
-    Properties:
-      AutoScalingGroupName: !Sub ${EnvironmentName}-jenkins-workers
-      DesiredCapacity: 0
-      MinSize: 0
-      MaxSize: 10
-      VPCZoneIdentifier:
-        - !Ref PrivateSubnet1
-        - !Ref PrivateSubnet2
-        - !Ref PrivateSubnet3
-      MixedInstancesPolicy:
-        LaunchTemplate:
-          LaunchTemplateSpecification:
-            LaunchTemplateId: !Ref WorkerLaunchTemplate
-            Version: !GetAtt WorkerLaunchTemplate.LatestVersionNumber
-          Overrides:
-            # m6a instances
-            - InstanceType: m6a.large
-            - InstanceType: m6a.xlarge
-            # c6a instances
-            - InstanceType: c6a.large
-            - InstanceType: c6a.xlarge
-            # r6a instances
-            - InstanceType: r6a.large
-            - InstanceType: r6a.xlarge
-        InstancesDistribution:
-          OnDemandAllocationStrategy: prioritized
-          OnDemandBaseCapacity: 0
-          OnDemandPercentageAboveBaseCapacity: 0
-          SpotAllocationStrategy: capacity-optimized
-          SpotInstancePools: 0
-      HealthCheckType: EC2
-      HealthCheckGracePeriod: 300
-      NewInstancesProtectedFromScaleIn: false
-      Cooldown: 300
-      Tags:
-        - Key: Name
-          Value: !Sub ${EnvironmentName}-jenkins-worker
-          PropagateAtLaunch: true
-        - Key: JenkinsManaged
-          Value: "true"
-          PropagateAtLaunch: true
-
 Outputs:
   JenkinsURL:
     Description: Jenkins URL
@@ -846,3 +852,7 @@ Outputs:
   JenkinsDefaultAdminPassword:
     Description: Initial Jenkins admin password in AWS Systems Manager Parameter Store
     Value: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${EnvironmentName}/jenkins/*
+
+  JenkinsWorkerASGName:
+    Description: Name of the Jenkins Worker Auto Scaling Group
+    Value: !Ref JenkinsWorkerASG
