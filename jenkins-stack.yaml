@@ -780,7 +780,7 @@ Resources:
         OnDemandTargetCapacity: 0
         SpotTargetCapacity: 0
         TotalTargetCapacity: 0
-      Type: instant
+      Type: maintain
 
 Outputs:
   JenkinsURL:
