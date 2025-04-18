@@ -812,7 +812,7 @@ Resources:
           OnDemandAllocationStrategy: prioritized
           OnDemandBaseCapacity: 0
           OnDemandPercentageAboveBaseCapacity: 0
-          SpotAllocationStrategy: capacity-optimized
+          SpotAllocationStrategy: lowest-price
           SpotInstancePools: 0
       HealthCheckType: EC2
       HealthCheckGracePeriod: 300
