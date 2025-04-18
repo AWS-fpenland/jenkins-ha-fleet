@@ -777,7 +777,7 @@ Resources:
         MaxTotalPrice: 10.0
         MinTargetCapacity: 0
       SpotOptions:
-        AllocationStrategy: capacity-optimized
+        AllocationStrategy: price-capacity-optimized
         InstanceInterruptionBehavior: terminate
       TargetCapacitySpecification:
         DefaultTargetCapacityType: on-demand
