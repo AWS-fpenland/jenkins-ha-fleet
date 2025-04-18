@@ -817,7 +817,6 @@ Resources:
           OnDemandBaseCapacity: 0
           OnDemandPercentageAboveBaseCapacity: 0
           SpotAllocationStrategy: price-capacity-optimized
-          SpotInstancePools: 20
       HealthCheckType: EC2
       HealthCheckGracePeriod: 300
       NewInstancesProtectedFromScaleIn: false
