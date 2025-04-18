@@ -158,7 +158,6 @@ Resources:
       SubnetId: !Ref PublicSubnet3
       RouteTableId: !Ref PublicRouteTable
 
-  # Add these resources after the existing network configuration:
 
   # Elastic IPs for NAT Gateways
   NatGateway1EIP:
@@ -365,6 +364,13 @@ Resources:
               - Effect: Allow
                 Action:
                   - autoscaling:DescribeAutoScalingGroups
+                  - autoscaling:UpdateAutoScalingGroup
+                  - autoscaling:SetDesiredCapacity
+                  - autoscaling:TerminateInstanceInAutoScalingGroup
+                  - autoscaling:CompleteLifecycleAction
+                  - autoscaling:PutScalingPolicy
+                  - autoscaling:DescribeScalingActivities
+                  - autoscaling:DescribeAutoScalingInstances
                   - ec2:DescribeInstances
                   - ec2:DescribeInstanceTypes
                   - ec2:DescribeSpotFleetRequests
@@ -373,8 +379,6 @@ Resources:
                   - ec2:DescribeFleets
                   - ec2:DescribeFleetInstances
                   - ec2:ModifyFleet
-                  - ec2:DescribeAutoScalingGroups
-                  - ec2:UpdateAutoScalingGroup
                   - ec2:DescribeSubnets
                   - ec2:DescribeSpotInstanceRequests
                   - ec2:RequestSpotInstances
