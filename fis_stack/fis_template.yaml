@@ -1,0 +1,302 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'CloudFormation template for FIS experiment setup including monitoring, logging, and IAM roles'
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: fis-stack
+    Description: Environment name prefix for resources
+  
+  AutoScalingGroupName:
+    Type: String
+    Default: jenkins-poc-jenkins-workers
+    Description: Name of the Auto Scaling Group to target
+
+  ASGResourceId:
+    Type: String
+    Description: The resource ID portion of the Auto Scaling group ARN (e.g., 03693d59-3aa7-4c41-90b7-bd4012e0874f)
+    Default: 03693d59-3aa7-4c41-90b7-bd4012e0874f
+  
+  LogRetentionInDays:
+    Type: Number
+    Default: 30
+    Description: Number of days to retain logs in CloudWatch
+    AllowedValues: [1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365, 400, 545, 731, 1827, 3653]
+  
+  ExperimentDuration:
+    Type: String
+    Default: PT30M
+    Description: Duration of the FIS experiment in ISO8601 format (e.g., PT30M for 30 minutes)
+  
+  AvailabilityZone:
+    Type: String
+    Default: usw2-az2
+    Description: Availability Zone identifier to simulate ICE (e.g., usw2-az2 for us-west-2a)
+    
+  ExistingCloudTrailLogGroup:
+    Type: String
+    Default: aws-controltower/CloudTrailLogs
+    Description: Name of the existing CloudTrail log group to use for metric filtering
+    
+  InstanceType1:
+    Type: String
+    Default: r6a.large
+    Description: First instance type to monitor for ICE errors
+    
+  InstanceType2:
+    Type: String
+    Default: m6a.large
+    Description: Second instance type to monitor for ICE errors
+    
+  InstanceType3:
+    Type: String
+    Default: r6a.xlarge
+    Description: Third instance type to monitor for ICE errors
+    
+  InstanceType4:
+    Type: String
+    Default: c6a.large
+    Description: Fourth instance type to monitor for ICE errors
+    
+  InstanceType5:
+    Type: String
+    Default: m6a.xlarge
+    Description: Fifth instance type to monitor for ICE errors
+    
+  InstanceType6:
+    Type: String
+    Default: c6a.xlarge
+    Description: Sixth instance type to monitor for ICE errors
+
+Resources:
+  # S3 Bucket for FIS experiment reports
+  FISLogsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "logs-${AWS::AccountId}-${EnvironmentName}-fis"
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+            BucketKeyEnabled: true
+      VersioningConfiguration:
+        Status: Enabled
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteOldReports
+            Status: Enabled
+            ExpirationInDays: 90
+
+  # S3 Bucket Policy
+  FISLogsBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref FISLogsBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowSSLRequestsOnly
+            Effect: Deny
+            Principal: '*'
+            Action: 's3:*'
+            Resource:
+              - !Sub 'arn:aws:s3:::${FISLogsBucket}'
+              - !Sub 'arn:aws:s3:::${FISLogsBucket}/*'
+            Condition:
+              Bool:
+                'aws:SecureTransport': false
+
+  # CloudWatch Log Group for FIS logs
+  FISLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub ${AWS::AccountId}-${EnvironmentName}-fis-logs
+      RetentionInDays: !Ref LogRetentionInDays
+      
+  # CloudWatch Metric Filter for ICE errors
+  ICEMetricFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref ExistingCloudTrailLogGroup
+      FilterPattern: '{ $.eventName = "RunInstances" && $.errorCode = "InsufficientInstanceCapacity" }'
+      MetricTransformations:
+        - MetricNamespace: "CloudTrail/EC2"
+          MetricName: "Server.InsufficientInstanceCapacity"
+          MetricValue: "1"
+          Dimensions:
+            - Key: "AvailabilityZone"
+              Value: "$.responseElements.availabilityZone"
+            - Key: "InstanceType"
+              Value: "$.requestParameters.instanceType"
+
+  # CloudWatch Dashboard for monitoring
+  FISDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: !Sub ${AWS::AccountId}-${EnvironmentName}
+      DashboardBody: !Sub |
+        {
+          "widgets": [
+            {
+              "height": 7,
+              "width": 24,
+              "y": 0,
+              "x": 0,
+              "type": "metric",
+              "properties": {
+                "metrics": [
+                  ["CloudTrail/EC2", "Server.InsufficientInstanceCapacity", "AvailabilityZone", "${AWS::Region}a", "InstanceType", "${InstanceType1}", {"region": "${AWS::Region}"}],
+                  ["...", "${InstanceType2}", {"region": "${AWS::Region}"}],
+                  ["...", "${AWS::Region}c", ".", "${InstanceType1}", {"region": "${AWS::Region}"}],
+                  ["...", "${InstanceType3}", {"region": "${AWS::Region}"}],
+                  ["...", "${InstanceType4}", {"region": "${AWS::Region}"}],
+                  ["...", "${InstanceType5}", {"region": "${AWS::Region}"}],
+                  ["...", "${InstanceType2}", {"region": "${AWS::Region}"}],
+                  ["...", "${AWS::Region}a", ".", "${InstanceType4}", {"region": "${AWS::Region}"}],
+                  ["...", "${InstanceType5}", {"region": "${AWS::Region}"}],
+                  ["...", "${InstanceType6}", {"region": "${AWS::Region}"}],
+                  ["...", "${AWS::Region}c", ".", ".", {"region": "${AWS::Region}"}]
+                ],
+                "view": "singleValue",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "Server.InsufficientInstanceCapacity",
+                "period": 1,
+                "stat": "SampleCount",
+                "liveData": true,
+                "sparkline": false
+              }
+            }
+          ]
+        }
+
+  # IAM Role for FIS
+  FISRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${EnvironmentName}-FISRole"
+      Path: /service-role/
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: FISTrustPolicy
+            Effect: Allow
+            Principal:
+              Service: fis.amazonaws.com
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+              ArnLike:
+                aws:SourceArn: !Sub "arn:aws:fis:${AWS::Region}:${AWS::AccountId}:experiment/*"
+
+  # IAM Policy for FIS
+  FISPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: !Sub "${EnvironmentName}-FISPolicy"
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowInjectAPI
+            Effect: Allow
+            Action:
+              - ec2:InjectApiError
+            Resource:
+              - "*"
+            Condition:
+              ForAnyValue:StringEquals:
+                ec2:FisActionId:
+                  - aws:ec2:api-insufficient-instance-capacity-error
+                  - aws:ec2:asg-insufficient-instance-capacity-error
+          - Sid: AllowS3Reports
+            Action:
+              - s3:putObject
+              - s3:getObject
+            Resource: !Sub "arn:aws:s3:::${FISLogsBucket}/*"
+            Effect: Allow
+          - Sid: AllowCloudWatchDashboard
+            Action:
+              - cloudwatch:getDashboard
+            Resource: !Sub "arn:aws:cloudwatch::${AWS::AccountId}:dashboard/*"
+            Effect: Allow
+          - Sid: AllowMetrics
+            Action:
+              - cloudwatch:getMetricWidgetImage
+            Resource: "*"
+            Effect: Allow
+          - Sid: AllowLogs
+            Effect: Allow
+            Action:
+              - logs:CreateLogDelivery
+              - logs:PutResourcePolicy
+              - logs:DescribeResourcePolicies
+              - logs:DescribeLogGroups
+            Resource: "*"
+          - Sid: DescribeAsg
+            Effect: Allow
+            Action:
+              - autoscaling:DescribeAutoScalingGroups
+            Resource:
+              - "*"
+      Roles:
+        - !Ref FISRole
+
+  # FIS Experiment Template
+  FISExperimentTemplate:
+    Type: AWS::FIS::ExperimentTemplate
+    Properties:
+      Description: !Sub "ICE_AZ_A - Insufficient Capacity Error in ${AvailabilityZone}"
+      Targets:
+        ASG_Target:
+          ResourceType: aws:ec2:autoscaling-group
+          ResourceArns:
+          - !Sub arn:aws:autoscaling:${AWS::Region}:${AWS::AccountId}:autoScalingGroup:${ASGResourceId}:autoScalingGroupName/${AutoScalingGroupName}
+          SelectionMode: ALL
+      Actions:
+        ICE_AZ_A:
+          ActionId: aws:ec2:asg-insufficient-instance-capacity-error
+          Parameters:
+            availabilityZoneIdentifiers: !Ref AvailabilityZone
+            duration: !Ref ExperimentDuration
+            percentage: "100"
+          Targets:
+            AutoScalingGroups: ASG_Target
+      StopConditions:
+        - Source: none
+      RoleArn: !GetAtt FISRole.Arn
+      Tags: 
+        Name: ICE_AZ_A
+      LogConfiguration:
+        CloudWatchLogsConfiguration:
+          LogGroupArn: !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:${FISLogGroup}:*"
+        LogSchemaVersion: 2
+      ExperimentOptions:
+        AccountTargeting: single-account
+        EmptyTargetResolutionMode: fail
+
+Outputs:
+  FISExperimentTemplateId:
+    Description: ID of the FIS Experiment Template
+    Value: !Ref FISExperimentTemplate
+  
+  FISLogsBucketName:
+    Description: Name of the S3 bucket for FIS logs
+    Value: !Ref FISLogsBucket
+  
+  FISLogGroupName:
+    Description: Name of the CloudWatch Log Group for FIS logs
+    Value: !Ref FISLogGroup
+  
+  FISDashboardName:
+    Description: Name of the CloudWatch Dashboard for FIS monitoring
+    Value: !Ref FISDashboard
+  
+  FISRoleArn:
+    Description: ARN of the IAM Role for FIS
+    Value: !GetAtt FISRole.Arn
