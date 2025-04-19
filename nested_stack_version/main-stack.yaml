@@ -1,0 +1,98 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Main stack that deploys Jenkins HA and FIS experiment resources'
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: jenkins-poc
+    Description: Environment name used for tagging and resource naming
+
+  JenkinsVersion:
+    Type: String
+    Default: 2.426.1
+    Description: Jenkins version to install
+
+  LatestAmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
+    
+  LogRetentionInDays:
+    Type: Number
+    Default: 30
+    Description: Number of days to retain logs in CloudWatch
+    AllowedValues: [1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365, 400, 545, 731, 1827, 3653]
+  
+  ExperimentDuration:
+    Type: String
+    Default: PT30M
+    Description: Duration of the FIS experiment in ISO8601 format (e.g., PT30M for 30 minutes)
+  
+  AvailabilityZone:
+    Type: String
+    Default: usw2-az2
+    Description: Availability Zone identifier to simulate ICE (e.g., usw2-az2 for us-west-2a)
+    
+  ExistingCloudTrailLogGroup:
+    Type: String
+    Default: aws-controltower/CloudTrailLogs
+    Description: Name of the existing CloudTrail log group to use for metric filtering
+    
+  InstanceType1:
+    Type: String
+    Default: r6a.large
+    Description: First instance type to monitor for ICE errors
+    
+  InstanceType2:
+    Type: String
+    Default: m6a.large
+    Description: Second instance type to monitor for ICE errors
+
+Resources:
+  # Deploy the Jenkins HA stack
+  JenkinsStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: ./jenkins-stack.yaml
+      Parameters:
+        EnvironmentName: !Ref EnvironmentName
+        JenkinsVersion: !Ref JenkinsVersion
+        LatestAmiId: !Ref LatestAmiId
+      TimeoutInMinutes: 30
+
+  # Deploy the FIS experiment stack
+  FISStack:
+    Type: AWS::CloudFormation::Stack
+    DependsOn: JenkinsStack
+    Properties:
+      TemplateURL: ./fis-stack.yaml
+      Parameters:
+        EnvironmentName: !Sub ${EnvironmentName}-fis
+        AutoScalingGroupName: !GetAtt JenkinsStack.Outputs.WorkerASGName
+        ASGResourceId: !GetAtt JenkinsStack.Outputs.WorkerASGResourceId
+        LogRetentionInDays: !Ref LogRetentionInDays
+        ExperimentDuration: !Ref ExperimentDuration
+        AvailabilityZone: !Ref AvailabilityZone
+        ExistingCloudTrailLogGroup: !Ref ExistingCloudTrailLogGroup
+        InstanceType1: !Ref InstanceType1
+        InstanceType2: !Ref InstanceType2
+
+Outputs:
+  JenkinsURL:
+    Description: URL to access Jenkins
+    Value: !GetAtt JenkinsStack.Outputs.JenkinsURL
+    
+  JenkinsInitialAdminPassword:
+    Description: Parameter Store path for Jenkins initial admin password
+    Value: !GetAtt JenkinsStack.Outputs.JenkinsInitialAdminPassword
+    
+  WorkerASGName:
+    Description: Name of the Jenkins worker Auto Scaling Group
+    Value: !GetAtt JenkinsStack.Outputs.WorkerASGName
+    
+  FISExperimentTemplateId:
+    Description: ID of the FIS experiment template
+    Value: !GetAtt FISStack.Outputs.FISExperimentTemplateId
+    
+  FISExperimentDashboard:
+    Description: URL to the FIS experiment CloudWatch dashboard
+    Value: !GetAtt FISStack.Outputs.FISExperimentDashboard
