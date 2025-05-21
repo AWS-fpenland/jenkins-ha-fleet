@@ -9,12 +9,12 @@ Parameters:
 
   JenkinsVersion:
     Type: String
-    Default: 2.426.1
+    Default: 2.504.1
     Description: Jenkins version to install
 
   LatestAmiId:
     Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
-    Default: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
+    Default: '/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64'
     
   LogRetentionInDays:
     Type: Number
@@ -29,7 +29,7 @@ Parameters:
   
   AvailabilityZone:
     Type: String
-    Default: usw2-az2
+    Default: use1-az6
     Description: Availability Zone identifier to simulate ICE (e.g., usw2-az2 for us-west-2a)
     
   ExistingCloudTrailLogGroup:
