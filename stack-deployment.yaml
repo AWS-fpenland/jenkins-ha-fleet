@@ -1,9 +1,9 @@
 template-file-path: ./jenkins-stack.yaml
 parameters:
-    EnvironmentName: jenkins-poc
-    JenkinsVersion: "2.492.1"
+    EnvironmentName: jenkins-ice-poc
+    JenkinsVersion: "2.504.1"
     LatestAmiId: '/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64'
 tags:
-    Project: JenkinsHA
+    Project: JenkinsICEDemo
     Environment: POC
     ManagedBy: CloudFormation
