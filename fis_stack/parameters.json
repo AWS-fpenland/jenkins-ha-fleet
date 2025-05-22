@@ -1,0 +1,54 @@
+[
+  {
+    "ParameterKey": "EnvironmentName",
+    "ParameterValue": "fis-stack"
+  },
+  {
+    "ParameterKey": "AutoScalingGroupName",
+    "ParameterValue": "jenkins-poc-jenkins-workers"
+  },
+  {
+    "ParameterKey": "ASGResourceId",
+    "ParameterValue": "03693d59-3aa7-4c41-90b7-bd4012e0874f"
+  },
+  {
+    "ParameterKey": "LogRetentionInDays",
+    "ParameterValue": "30"
+  },
+  {
+    "ParameterKey": "ExperimentDuration",
+    "ParameterValue": "PT30M"
+  },
+  {
+    "ParameterKey": "AvailabilityZone",
+    "ParameterValue": "usw2-az2"
+  },
+  {
+    "ParameterKey": "ExistingCloudTrailLogGroup",
+    "ParameterValue": "aws-controltower/CloudTrailLogs"
+  },
+  {
+    "ParameterKey": "InstanceType1",
+    "ParameterValue": "r6a.large"
+  },
+  {
+    "ParameterKey": "InstanceType2",
+    "ParameterValue": "m6a.large"
+  },
+  {
+    "ParameterKey": "InstanceType3",
+    "ParameterValue": "r6a.xlarge"
+  },
+  {
+    "ParameterKey": "InstanceType4",
+    "ParameterValue": "c6a.large"
+  },
+  {
+    "ParameterKey": "InstanceType5",
+    "ParameterValue": "m6a.xlarge"
+  },
+  {
+    "ParameterKey": "InstanceType6",
+    "ParameterValue": "c6a.xlarge"
+  }
+]

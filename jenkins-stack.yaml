@@ -697,7 +697,7 @@ Resources:
 
             # Update system
             yum update -y
-            yum install -y java-11-amazon-corretto-headless git docker
+            yum install -y java-17-amazon-corretto-headless git docker
 
             # Start Docker
             systemctl enable docker
