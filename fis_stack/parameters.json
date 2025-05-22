@@ -5,11 +5,11 @@
   },
   {
     "ParameterKey": "AutoScalingGroupName",
-    "ParameterValue": "jenkins-poc-jenkins-workers"
+    "ParameterValue": "ice-poc-v2-jenkins-workers"
   },
   {
     "ParameterKey": "ASGResourceId",
-    "ParameterValue": "03693d59-3aa7-4c41-90b7-bd4012e0874f"
+    "ParameterValue": "a435d023-5b08-4534-9c51-97ee2e448d9b"
   },
   {
     "ParameterKey": "LogRetentionInDays",
@@ -21,7 +21,7 @@
   },
   {
     "ParameterKey": "AvailabilityZone",
-    "ParameterValue": "usw2-az2"
+    "ParameterValue": "use1-az6"
   },
   {
     "ParameterKey": "ExistingCloudTrailLogGroup",
