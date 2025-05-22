@@ -6,7 +6,7 @@
     "LogRetentionInDays": "30",
     "ExperimentDuration": "PT30M",
     "AvailabilityZone": "use1-az6",
-    "ExistingCloudTrailLogGroup": "aws-controltower/CloudTrailLogs",
+    "ExistingCloudTrailLogGroup": "aws-cloudtrail-logs-aws-cloudtrail-logs-demo-account",
     "InstanceType1": "r6a.large",
     "InstanceType2": "m6a.large",
     "InstanceType3": "r6a.xlarge",
