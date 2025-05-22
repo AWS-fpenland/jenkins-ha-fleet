@@ -826,7 +826,7 @@ Resources:
         InstancesDistribution:
           OnDemandAllocationStrategy: prioritized
           OnDemandBaseCapacity: 0
-          OnDemandPercentageAboveBaseCapacity: 0
+          OnDemandPercentageAboveBaseCapacity: 100
           SpotAllocationStrategy: price-capacity-optimized
       HealthCheckType: EC2
       HealthCheckGracePeriod: 300
