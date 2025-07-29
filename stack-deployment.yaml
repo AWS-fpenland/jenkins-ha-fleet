@@ -1,4 +1,4 @@
-template-file-path: ./jenkins-stack-updated.yaml
+template-file-path: ./jenkins-stack.yaml
 parameters:
     EnvironmentName: ice-poc-v2
     JenkinsVersion: "2.504.1"
