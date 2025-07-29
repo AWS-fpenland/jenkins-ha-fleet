@@ -123,7 +123,7 @@ Resources:
     Type: AWS::Logs::MetricFilter
     Properties:
       LogGroupName: !Ref ExistingCloudTrailLogGroup
-      FilterPattern: '{ $.eventName = "RunInstances" && $.errorCode = "Server.InsufficientInstanceCapacity" }'
+      FilterPattern: '{ $.errorCode = "Server.InsufficientInstanceCapacity" }'
       MetricTransformations:
         - MetricNamespace: "CloudTrail/EC2"
           MetricName: "Server.InsufficientInstanceCapacity"
