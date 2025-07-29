@@ -7,3 +7,4 @@ tags:
     Project: JenkinsICEDemo
     Environment: POC
     ManagedBy: CloudFormation
+    auto-delete: no
