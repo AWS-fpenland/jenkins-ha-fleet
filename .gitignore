@@ -3,6 +3,10 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# other folders
+sa-demo/
+sa-chat.json
+
 # C extensions
 *.so
 

@@ -1,0 +1,68 @@
+pipeline {
+    agent none
+    
+    stages {
+        stage('Parallel Tests') {
+            parallel {
+                stage('Test 1') {
+                    agent {
+                        label 'ec2-fleet'
+                    }
+                    steps {
+                        echo "Running on worker: ${env.NODE_NAME}"
+                        sh '''
+                            # Simulate a test workload
+                            echo "Starting Test 1"
+                            sleep 30
+                            echo "System Info:"
+                            uname -a
+                            echo "Memory Info:"
+                            free -h
+                            echo "Test 1 Complete"
+                        '''
+                    }
+                }
+                stage('Test 2') {
+                    agent {
+                        label 'ec2-fleet'
+                    }
+                    steps {
+                        echo "Running on worker: ${env.NODE_NAME}"
+                        sh '''
+                            # Simulate a different test workload
+                            echo "Starting Test 2"
+                            sleep 45
+                            echo "Disk Space:"
+                            df -h
+                            echo "CPU Info:"
+                            lscpu
+                            echo "Test 2 Complete"
+                        '''
+                    }
+                }
+                stage('Test 3') {
+                    agent {
+                        label 'ec2-fleet'
+                    }
+                    steps {
+                        echo "Running on worker: ${env.NODE_NAME}"
+                        sh '''
+                            # Simulate another test workload
+                            echo "Starting Test 3"
+                            sleep 60
+                            echo "Process Info:"
+                            ps aux | head -5
+                            echo "Test 3 Complete"
+                        '''
+                    }
+                }
+            }
+        }
+    }
+    
+    post {
+        always {
+            echo 'Pipeline completed'
+        }
+    }
+}
