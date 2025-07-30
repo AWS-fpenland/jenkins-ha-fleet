@@ -9,7 +9,7 @@
   },
   {
     "ParameterKey": "ASGResourceId",
-    "ParameterValue": "a435d023-5b08-4534-9c51-97ee2e448d9b"
+    "ParameterValue": "c891ad26-0eea-4c8b-8288-4f98edb7e917"
   },
   {
     "ParameterKey": "LogRetentionInDays",
@@ -25,7 +25,7 @@
   },
   {
     "ParameterKey": "ExistingCloudTrailLogGroup",
-    "ParameterValue": "aws-controltower/CloudTrailLogs"
+    "ParameterValue": "aws-cloudtrail-logs-local"
   },
   {
     "ParameterKey": "InstanceType1",
